@@ -38,15 +38,11 @@
         return 'video';
     }
 
-    function getAndroidMethods() {
-        if (typeof Android === 'undefined') return [];
-        var methods = [];
-        for (var key in Android) {
-            if (typeof Android[key] === 'function') {
-                methods.push(key);
-            }
-        }
-        return methods;
+    function getAndroidBridge() {
+        if (typeof Android !== 'undefined') return { name: 'Android', obj: Android };
+        if (typeof window.Android !== 'undefined') return { name: 'window.Android', obj: window.Android };
+        if (typeof AndroidApp !== 'undefined') return { name: 'AndroidApp', obj: AndroidApp };
+        return null;
     }
 
     function showMenu() {
@@ -57,44 +53,31 @@
         }
 
         var title = getTitle();
-        var methods = getAndroidMethods();
+        var bridge = getAndroidBridge();
+        var platform = Lampa.Platform ? Lampa.Platform.get() : 'unknown';
 
         Lampa.Select.show({
             title: 'Download: ' + title.substring(0, 25),
             items: [
-                { title: 'Open with App', subtitle: 'Android app chooser', id: 'player' },
-                { title: 'Open in Browser', subtitle: 'Browser download', id: 'browser' },
+                { title: 'Open with App', subtitle: 'External player', id: 'player' },
+                { title: 'Open in Browser', subtitle: 'Browser', id: 'browser' },
                 { title: 'Copy URL', subtitle: 'Manual paste', id: 'copy' },
-                { title: 'Show Android Methods', subtitle: 'Debug info', id: 'debug' }
+                { title: 'Debug Info', subtitle: 'Platform: ' + platform, id: 'debug' }
             ],
             onSelect: function (item) {
                 Lampa.Select.close();
 
                 if (item.id === 'player') {
-                    if (typeof Android !== 'undefined') {
-                        if (Android.openPlayer) {
-                            Android.openPlayer(url, JSON.stringify({ title: title }));
-                            Lampa.Noty.show('Opening player...');
-                        } else if (Android.openExternalPlayer) {
-                            Android.openExternalPlayer(url);
-                            Lampa.Noty.show('Opening external player...');
-                        } else if (Android.shareText) {
-                            Android.shareText(url);
-                            Lampa.Noty.show('Sharing...');
-                        } else if (Android.share) {
-                            Android.share(url);
-                            Lampa.Noty.show('Sharing...');
-                        } else {
-                            copyToClipboard(url);
-                            Lampa.Noty.show('No player method. URL copied!');
-                        }
+                    if (bridge && bridge.obj.openPlayer) {
+                        bridge.obj.openPlayer(url, JSON.stringify({ title: title }));
+                        Lampa.Noty.show('Opening player...');
                     } else {
                         copyToClipboard(url);
-                        Lampa.Noty.show('Android not available. URL copied!');
+                        Lampa.Noty.show('No Android bridge. URL copied!');
                     }
                 } else if (item.id === 'browser') {
-                    if (typeof Android !== 'undefined' && Android.openBrowser) {
-                        Android.openBrowser(url);
+                    if (bridge && bridge.obj.openBrowser) {
+                        bridge.obj.openBrowser(url);
                     } else {
                         window.open(url, '_blank');
                     }
@@ -102,12 +85,8 @@
                     copyToClipboard(url);
                     Lampa.Noty.show('URL copied!');
                 } else if (item.id === 'debug') {
-                    if (methods.length > 0) {
-                        Lampa.Noty.show('Methods: ' + methods.slice(0, 10).join(', '));
-                        console.log('All Android methods:', methods);
-                    } else {
-                        Lampa.Noty.show('No Android methods found');
-                    }
+                    var info = 'Platform: ' + platform + ', Bridge: ' + (bridge ? bridge.name : 'none');
+                    Lampa.Noty.show(info);
                 }
             },
             onBack: function () {
