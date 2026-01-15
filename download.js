@@ -38,34 +38,6 @@
         return 'video';
     }
 
-    function tryWebShare(url, title) {
-        if (navigator.share) {
-            navigator.share({
-                title: title,
-                text: 'Download: ' + title,
-                url: url
-            }).then(function() {
-                Lampa.Noty.show('Shared!');
-            }).catch(function(e) {
-                if (e.name !== 'AbortError') {
-                    copyToClipboard(url);
-                    Lampa.Noty.show('Share failed. URL copied!');
-                }
-            });
-            return true;
-        }
-        return false;
-    }
-
-    function openInBrowser(url) {
-        if (typeof Android !== 'undefined' && Android.openBrowser) {
-            Android.openBrowser(url);
-            Lampa.Noty.show('Opening in browser...');
-            return true;
-        }
-        return false;
-    }
-
     function showMenu() {
         var url = getVideoUrl();
         if (!url) {
@@ -78,20 +50,26 @@
         Lampa.Select.show({
             title: 'Download: ' + title.substring(0, 25),
             items: [
-                { title: 'Share to App', subtitle: 'Seal, YTDLnis, ADM...', id: 'share' },
-                { title: 'Open in Browser', subtitle: 'Download via browser', id: 'browser' },
+                { title: 'Open with App', subtitle: 'Seal, YTDLnis, VLC...', id: 'player' },
+                { title: 'Open in Browser', subtitle: 'Browser download', id: 'browser' },
                 { title: 'Copy URL', subtitle: 'Manual paste', id: 'copy' }
             ],
             onSelect: function (item) {
                 Lampa.Select.close();
 
-                if (item.id === 'share') {
-                    if (!tryWebShare(url, title)) {
+                if (item.id === 'player') {
+                    if (typeof Android !== 'undefined' && Android.openPlayer) {
+                        var json = JSON.stringify({ title: title });
+                        Android.openPlayer(url, json);
+                        Lampa.Noty.show('Select Seal or YTDLnis from the list');
+                    } else {
                         copyToClipboard(url);
-                        Lampa.Noty.show('URL copied! Open download app and paste');
+                        Lampa.Noty.show('URL copied!');
                     }
                 } else if (item.id === 'browser') {
-                    if (!openInBrowser(url)) {
+                    if (typeof Android !== 'undefined' && Android.openBrowser) {
+                        Android.openBrowser(url);
+                    } else {
                         window.open(url, '_blank');
                     }
                 } else if (item.id === 'copy') {
