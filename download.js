@@ -38,6 +38,17 @@
         return 'video';
     }
 
+    function getAndroidMethods() {
+        if (typeof Android === 'undefined') return [];
+        var methods = [];
+        for (var key in Android) {
+            if (typeof Android[key] === 'function') {
+                methods.push(key);
+            }
+        }
+        return methods;
+    }
+
     function showMenu() {
         var url = getVideoUrl();
         if (!url) {
@@ -46,25 +57,40 @@
         }
 
         var title = getTitle();
+        var methods = getAndroidMethods();
 
         Lampa.Select.show({
             title: 'Download: ' + title.substring(0, 25),
             items: [
-                { title: 'Open with App', subtitle: 'Seal, YTDLnis, VLC...', id: 'player' },
+                { title: 'Open with App', subtitle: 'Android app chooser', id: 'player' },
                 { title: 'Open in Browser', subtitle: 'Browser download', id: 'browser' },
-                { title: 'Copy URL', subtitle: 'Manual paste', id: 'copy' }
+                { title: 'Copy URL', subtitle: 'Manual paste', id: 'copy' },
+                { title: 'Show Android Methods', subtitle: 'Debug info', id: 'debug' }
             ],
             onSelect: function (item) {
                 Lampa.Select.close();
 
                 if (item.id === 'player') {
-                    if (typeof Android !== 'undefined' && Android.openPlayer) {
-                        var json = JSON.stringify({ title: title });
-                        Android.openPlayer(url, json);
-                        Lampa.Noty.show('Select Seal or YTDLnis from the list');
+                    if (typeof Android !== 'undefined') {
+                        if (Android.openPlayer) {
+                            Android.openPlayer(url, JSON.stringify({ title: title }));
+                            Lampa.Noty.show('Opening player...');
+                        } else if (Android.openExternalPlayer) {
+                            Android.openExternalPlayer(url);
+                            Lampa.Noty.show('Opening external player...');
+                        } else if (Android.shareText) {
+                            Android.shareText(url);
+                            Lampa.Noty.show('Sharing...');
+                        } else if (Android.share) {
+                            Android.share(url);
+                            Lampa.Noty.show('Sharing...');
+                        } else {
+                            copyToClipboard(url);
+                            Lampa.Noty.show('No player method. URL copied!');
+                        }
                     } else {
                         copyToClipboard(url);
-                        Lampa.Noty.show('URL copied!');
+                        Lampa.Noty.show('Android not available. URL copied!');
                     }
                 } else if (item.id === 'browser') {
                     if (typeof Android !== 'undefined' && Android.openBrowser) {
@@ -75,6 +101,13 @@
                 } else if (item.id === 'copy') {
                     copyToClipboard(url);
                     Lampa.Noty.show('URL copied!');
+                } else if (item.id === 'debug') {
+                    if (methods.length > 0) {
+                        Lampa.Noty.show('Methods: ' + methods.slice(0, 10).join(', '));
+                        console.log('All Android methods:', methods);
+                    } else {
+                        Lampa.Noty.show('No Android methods found');
+                    }
                 }
             },
             onBack: function () {
