@@ -153,21 +153,26 @@
 
         // Log available APIs
         setTimeout(function() {
-            var lampaKeys = Object.keys(Lampa).join(', ');
-            console.log('[DLHelper] Lampa keys:', lampaKeys);
+            // Check Lampa.Platform methods
+            if (Lampa.Platform) {
+                var platformMethods = [];
+                for (var k in Lampa.Platform) {
+                    platformMethods.push(k);
+                }
+                console.log('[DLHelper] Platform:', platformMethods.join(', '));
+                Lampa.Noty.show('[DLHelper] Platform: ' + platformMethods.slice(0, 6).join(', '));
+            }
 
-            // Check for Platform or Android-related Lampa APIs
-            var platformInfo = [];
-            if (Lampa.Platform) platformInfo.push('Platform');
-            if (Lampa.Android) platformInfo.push('Android');
-            if (Lampa.Device) platformInfo.push('Device');
-            if (Lampa.Utils && Lampa.Utils.openPlayer) platformInfo.push('Utils.openPlayer');
-
-            Lampa.Noty.show('[DLHelper] Lampa: ' + (platformInfo.length ? platformInfo.join(', ') : 'checking...'));
-
-            // Show first 10 Lampa keys
+            // Check Lampa.Android methods
             setTimeout(function() {
-                Lampa.Noty.show('[DLHelper] Keys: ' + Object.keys(Lampa).slice(0, 8).join(', '));
+                if (Lampa.Android) {
+                    var androidMethods = [];
+                    for (var k in Lampa.Android) {
+                        androidMethods.push(k);
+                    }
+                    console.log('[DLHelper] Lampa.Android:', androidMethods.join(', '));
+                    Lampa.Noty.show('[DLHelper] Android: ' + androidMethods.slice(0, 6).join(', '));
+                }
             }, 2000);
         }, 3000);
     }
