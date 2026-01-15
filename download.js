@@ -38,11 +38,8 @@
         return 'video';
     }
 
-    function getAndroidBridge() {
-        if (typeof Android !== 'undefined') return { name: 'Android', obj: Android };
-        if (typeof window.Android !== 'undefined') return { name: 'window.Android', obj: window.Android };
-        if (typeof AndroidApp !== 'undefined') return { name: 'AndroidApp', obj: AndroidApp };
-        return null;
+    function hasAndroid() {
+        return typeof Android !== 'undefined' && Android.openPlayer;
     }
 
     function showMenu() {
@@ -53,40 +50,33 @@
         }
 
         var title = getTitle();
-        var bridge = getAndroidBridge();
-        var platform = Lampa.Platform ? Lampa.Platform.get() : 'unknown';
+        var androidAvailable = hasAndroid();
+
+        var items = [];
+
+        if (androidAvailable) {
+            items.push({ title: 'Open with External App', subtitle: 'Seal, YTDLnis, VLC...', id: 'external' });
+        }
+
+        items.push({ title: 'Copy URL', subtitle: 'Paste in download app', id: 'copy' });
 
         Lampa.Select.show({
             title: 'Download: ' + title.substring(0, 25),
-            items: [
-                { title: 'Open with App', subtitle: 'External player', id: 'player' },
-                { title: 'Open in Browser', subtitle: 'Browser', id: 'browser' },
-                { title: 'Copy URL', subtitle: 'Manual paste', id: 'copy' },
-                { title: 'Debug Info', subtitle: 'Platform: ' + platform, id: 'debug' }
-            ],
+            items: items,
             onSelect: function (item) {
                 Lampa.Select.close();
 
-                if (item.id === 'player') {
-                    if (bridge && bridge.obj.openPlayer) {
-                        bridge.obj.openPlayer(url, JSON.stringify({ title: title }));
-                        Lampa.Noty.show('Opening player...');
-                    } else {
+                if (item.id === 'external') {
+                    try {
+                        Android.openPlayer(url, JSON.stringify({ title: title }));
+                        Lampa.Noty.show('Choose Seal or YTDLnis');
+                    } catch (e) {
                         copyToClipboard(url);
-                        Lampa.Noty.show('No Android bridge. URL copied!');
+                        Lampa.Noty.show('Error: ' + e.message + '. URL copied!');
                     }
-                } else if (item.id === 'browser') {
-                    if (bridge && bridge.obj.openBrowser) {
-                        bridge.obj.openBrowser(url);
-                    } else {
-                        window.open(url, '_blank');
-                    }
-                } else if (item.id === 'copy') {
+                } else {
                     copyToClipboard(url);
-                    Lampa.Noty.show('URL copied!');
-                } else if (item.id === 'debug') {
-                    var info = 'Platform: ' + platform + ', Bridge: ' + (bridge ? bridge.name : 'none');
-                    Lampa.Noty.show(info);
+                    Lampa.Noty.show('URL copied! Paste in Seal/YTDLnis');
                 }
             },
             onBack: function () {
@@ -123,6 +113,11 @@
                 setTimeout(addButton, 500);
             });
         }
+
+        // Log Android availability after delay
+        setTimeout(function() {
+            console.log('[DLHelper] Android available:', hasAndroid());
+        }, 2000);
     }
 
     if (!window.lampa_download_helper) startPlugin();
