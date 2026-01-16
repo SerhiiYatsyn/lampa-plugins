@@ -320,74 +320,55 @@
                     // Show debug info
                     var debugInfo = [];
 
-                    // Check Activity
+                    // Check Activity stack - show all items
                     try {
-                        var a = Lampa.Activity.active();
-                        debugInfo.push('ACT.comp: ' + (a && a.component || 'none'));
-                        if (a && a.card) {
-                            debugInfo.push('CARD.title: ' + (a.card.title || 'none'));
-                            debugInfo.push('CARD.name: ' + (a.card.name || 'none'));
-                        } else {
-                            debugInfo.push('CARD: null');
+                        var stack = Lampa.Activity.stack();
+                        debugInfo.push('STACK.len: ' + (stack ? stack.length : 0));
+                        if (stack && stack.length > 0) {
+                            stack.forEach(function(item, idx) {
+                                var info = 'ST[' + idx + ']: ' + (item.component || '?');
+                                if (item.card) {
+                                    info += ' card=' + (item.card.title || item.card.name || '?');
+                                }
+                                debugInfo.push(info);
+                            });
                         }
-                    } catch(e) { debugInfo.push('ACT: error'); }
+                    } catch(e) { debugInfo.push('STACK: err ' + e.message); }
 
                     // Check playdata - show ALL keys
                     try {
                         var pd = Lampa.Player.playdata();
                         if (pd) {
-                            var allKeys = Object.keys(pd);
-                            debugInfo.push('PD keys(' + allKeys.length + '): ' + allKeys.join(','));
+                            debugInfo.push('PD.keys: ' + Object.keys(pd).join(','));
                             debugInfo.push('PD.title: ' + (pd.title || 'none'));
-                            debugInfo.push('PD.name: ' + (pd.name || 'none'));
                             debugInfo.push('PD.season: ' + (pd.season || 'none'));
                             debugInfo.push('PD.episode: ' + (pd.episode || 'none'));
                             // Check if pd.card exists
                             if (pd.card) {
-                                debugInfo.push('PD.card.title: ' + (pd.card.title || pd.card.name || 'none'));
+                                debugInfo.push('PD.card: ' + (pd.card.title || pd.card.name || 'obj'));
                             }
-                            // Check other possible locations
-                            if (pd.movie) debugInfo.push('PD.movie: ' + JSON.stringify(pd.movie).substring(0, 40));
-                            if (pd.show) debugInfo.push('PD.show: ' + pd.show);
-                            if (pd.show_title) debugInfo.push('PD.show_title: ' + pd.show_title);
-                            if (pd.series_title) debugInfo.push('PD.series_title: ' + pd.series_title);
                         }
-                    } catch(e) { debugInfo.push('PD: error ' + e.message); }
+                    } catch(e) { debugInfo.push('PD: error'); }
 
                     // Check Lampa.Storage for multiple keys
-                    var storageKeys = ['movie', 'card', 'select_catalog', 'playlist', 'last_card', 'full', 'full_movie'];
+                    var storageKeys = ['movie', 'card', 'playlist', 'online_last_balanser', 'source'];
                     storageKeys.forEach(function(key) {
                         try {
                             var val = Lampa.Storage.get(key, null);
-                            if (val && (val.title || val.name || typeof val === 'string')) {
-                                debugInfo.push('STOR.' + key + ': ' + (val.title || val.name || String(val).substring(0, 30)));
+                            if (val) {
+                                if (val.title || val.name) {
+                                    debugInfo.push('STOR.' + key + ': ' + (val.title || val.name));
+                                } else if (typeof val === 'object') {
+                                    debugInfo.push('STOR.' + key + ': ' + Object.keys(val).slice(0, 5).join(','));
+                                }
                             }
                         } catch(e) {}
                     });
 
-                    // Check Activity stack for card data
-                    try {
-                        var stack = Lampa.Activity.stack();
-                        if (stack && stack.length > 0) {
-                            for (var i = stack.length - 1; i >= 0; i--) {
-                                if (stack[i].card) {
-                                    debugInfo.push('STACK[' + i + '].card: ' + (stack[i].card.title || stack[i].card.name || 'none'));
-                                    break;
-                                }
-                            }
-                        }
-                    } catch(e) {}
-
-                    // Check player panel elements
-                    var el = document.querySelector('.player-info__title');
-                    debugInfo.push('INFO-TITLE: ' + (el ? el.textContent.trim().substring(0, 40) : 'none'));
-
-                    var el2 = document.querySelector('.player-info__name');
-                    debugInfo.push('INFO-NAME: ' + (el2 ? el2.textContent.trim().substring(0, 40) : 'none'));
-
-                    // Check full-start__title
-                    var el3 = document.querySelector('.full-start__title');
-                    debugInfo.push('FULL-TITLE: ' + (el3 ? el3.textContent.trim().substring(0, 40) : 'none'));
+                    // Check window globals that plugins might set
+                    if (window.lampa_source_card) {
+                        debugInfo.push('WIN.source_card: ' + (window.lampa_source_card.title || 'obj'));
+                    }
 
                     debugInfo.push('FILENAME: ' + getFilename('720p'));
 
