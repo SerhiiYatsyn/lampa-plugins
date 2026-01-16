@@ -197,12 +197,13 @@
             parts.push(quality);
         }
 
-        // Join with underscores and clean up
-        var filename = parts.join('_')
-            .replace(/[<>:"/\\|?*]/g, '') // Remove invalid chars
-            .replace(/\s+/g, '_')          // Replace spaces with underscores
-            .replace(/_+/g, '_')           // Remove double underscores
-            .replace(/^_|_$/g, '');        // Remove leading/trailing underscores
+        // Clean each part, then join with " - "
+        var filename = parts
+            .map(function(p) {
+                return String(p).replace(/[<>:"/\\|?*]/g, '').trim();
+            })
+            .filter(function(p) { return p.length > 0; })
+            .join(' - ');
 
         return filename || 'video';
     }
