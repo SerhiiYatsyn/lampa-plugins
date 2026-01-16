@@ -283,19 +283,21 @@
         const filename = getFilename(quality);
         const sizeText = fileSize ? ' (' + formatBytes(fileSize) + ')' : '';
         const subtitles = getSubtitles();
+        const isHls = url.includes('.m3u8');
 
         const items = [];
 
         if (androidAvailable) {
             const subText = subtitles.length > 0 ? ` + ${subtitles.length} sub` : '';
-            items.push({ title: 'Download', subtitle: filename + '.mp4' + sizeText + subText, id: 'download' });
-            items.push({ title: 'External Player', subtitle: 'VLC, MX...', id: 'external' });
+            const ext = isHls ? '.m3u8' : '.mp4';
+            items.push({ title: 'Download', subtitle: filename + ext + sizeText + subText, id: 'download' });
+            items.push({ title: 'External Player', subtitle: 'VLC, MX Player', id: 'external' });
         }
 
         items.push({ title: 'Copy URL', subtitle: url.substring(0, 40) + '...', id: 'copy' });
 
         Lampa.Select.show({
-            title: quality + sizeText,
+            title: quality + sizeText + (isHls ? ' [HLS]' : ''),
             items,
             onSelect: function(item) {
                 Lampa.Select.close();
