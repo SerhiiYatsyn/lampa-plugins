@@ -119,6 +119,15 @@
     }
 
     // ========== QUALITY SELECTOR ==========
+    function getQualityLabel(stream) {
+        var label = stream.quality || stream.label || stream.title || 'Video';
+        // Handle object - try to get a string from it
+        if (typeof label === 'object' && label !== null) {
+            label = label.title || label.name || label.quality || label.label || JSON.stringify(label).substring(0, 30);
+        }
+        return String(label);
+    }
+
     function showQualitySelector(streams, returnTo) {
         if (!streams || streams.length === 0) {
             Lampa.Noty.show('No streams available');
@@ -126,12 +135,12 @@
         }
 
         if (streams.length === 1) {
-            showDownloadMenu(streams[0].url, streams[0].quality, returnTo);
+            showDownloadMenu(streams[0].url, getQualityLabel(streams[0]), returnTo);
             return;
         }
 
-        var items = streams.map(function(s) {
-            return { title: s.quality || s.label || 'Video', url: s.url };
+        var items = streams.map(function(s, i) {
+            return { title: getQualityLabel(s) || ('Quality ' + (i + 1)), url: s.url };
         });
 
         Lampa.Select.show({
