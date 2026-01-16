@@ -913,29 +913,29 @@
             if (params && params.items && Array.isArray(params.items) && !params._dlHelperProcessed) {
                 params._dlHelperProcessed = true;
 
-                // Check if this is a quality selection menu (opened after clicking "Копировать ссылку")
-                // These menus typically have items with copylink property and quality in title
-                var hasQualityItems = params.items.some(function(item) {
-                    var title = (item.title || '').toLowerCase();
-                    return (item.copylink || item.url || item.file) &&
-                           (title.indexOf('720') > -1 || title.indexOf('480') > -1 ||
-                            title.indexOf('1080') > -1 || title.indexOf('360') > -1 ||
-                            title.indexOf('2160') > -1 || title.indexOf('4k') > -1 ||
-                            title.indexOf('hd') > -1 || title.indexOf('sd') > -1);
-                });
-
-                // If we have a pending download and this looks like a quality menu
-                if (pendingDownload && hasQualityItems) {
+                // If we have a pending download, intercept ANY next menu
+                if (pendingDownload) {
+                    // Collect ALL URLs from items - check many possible properties
                     var qualities = [];
                     params.items.forEach(function(item) {
-                        var url = item.copylink || item.url || item.file || item.link;
+                        // Check all possible URL properties
+                        var url = null;
+                        var urlProps = ['copylink', 'url', 'file', 'link', 'stream', 'src', 'video', 'href'];
+                        for (var p = 0; p < urlProps.length; p++) {
+                            var prop = urlProps[p];
+                            if (item[prop] && typeof item[prop] === 'string' && item[prop].indexOf('http') === 0) {
+                                url = item[prop];
+                                break;
+                            }
+                        }
+
                         if (url) {
-                            qualities.push({ label: item.title || 'Unknown', url: url });
+                            qualities.push({ label: item.title || item.quality || 'Unknown', url: url });
                         }
                     });
 
                     if (qualities.length > 0) {
-                        // Show our download quality selector instead
+                        // Found URLs! Show download quality selector
                         var epInfo = pendingDownload.episodeInfo;
                         var videoTitle = pendingDownload.videoTitle;
                         pendingDownload = null;
@@ -958,33 +958,16 @@
                             _dlHelperProcessed: true
                         });
                         return; // Don't show original menu
+                    } else {
+                        // No URLs found - show debug and pass through to original menu
+                        var debugMsg = 'Items: ' + params.items.length + ', Props: ';
+                        if (params.items.length > 0) {
+                            debugMsg += Object.keys(params.items[0]).join(',');
+                        }
+                        Lampa.Noty.show('No URLs found. ' + debugMsg.substring(0, 50));
+                        pendingDownload = null;
+                        // Fall through to show original menu
                     }
-                }
-
-                // If pending download but no quality items found - show debug
-                if (pendingDownload && !hasQualityItems) {
-                    var debugItems = [];
-                    debugItems.push({ title: 'Menu title: ' + (params.title || 'none') });
-                    debugItems.push({ title: 'Items count: ' + params.items.length });
-                    params.items.forEach(function(item, idx) {
-                        var keys = Object.keys(item).join(',');
-                        debugItems.push({ title: 'Item' + idx + ': ' + (item.title || '').substring(0, 25) });
-                        debugItems.push({ title: '  Keys: ' + keys });
-                        if (item.copylink) debugItems.push({ title: '  copylink: YES' });
-                        if (item.url) debugItems.push({ title: '  url: YES' });
-                    });
-
-                    var epInfo2 = pendingDownload.episodeInfo;
-                    var videoTitle2 = pendingDownload.videoTitle;
-                    pendingDownload = null;
-
-                    Lampa.Select.show({
-                        title: 'Debug: Quality Menu',
-                        items: debugItems,
-                        onBack: function() { Lampa.Controller.toggle('content'); },
-                        _dlHelperProcessed: true
-                    });
-                    return;
                 }
 
                 // Check if this is the "Действие" menu (player action menu)
