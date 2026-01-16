@@ -270,42 +270,52 @@
         Lampa.Noty.show('Opening player...');
     }
 
-    // Open URL in 1DM/IDM with custom filename
-    function openIn1DM(url, filename) {
-        // 1DM intent format with extra_filename
-        // Package: idm.internet.download.manager.plus (1DM+) or idm.internet.download.manager (1DM)
-        const packages = [
-            'idm.internet.download.manager.plus',
-            'idm.internet.download.manager',
-            'idm.internet.download.manager.adm.lite'
-        ];
-
-        // Try each package
-        for (const pkg of packages) {
-            const intentUrl = `intent:${url}#Intent;action=android.intent.action.VIEW;package=${pkg};S.extra_filename=${encodeURIComponent(filename)};end`;
+    // Try to open external app via Lampa methods
+    function openExternalDownloader(url, filename) {
+        // Method 1: Try Lampa.Android.openPlayer with download manager URL scheme
+        // 1DM listens for URLs with #filename= suffix
+        if (Lampa.Android?.openPlayer) {
             try {
-                window.location.href = intentUrl;
-                Lampa.Noty.show('Opening 1DM...');
+                // Format URL for 1DM/ADM - they can pick up from openPlayer if set as default
+                const dlUrl = url + '#filename=' + encodeURIComponent(filename);
+                Lampa.Android.openPlayer(dlUrl, JSON.stringify({
+                    title: filename,
+                    download: true
+                }));
+                Lampa.Noty.show('Opening download manager...');
                 return true;
-            } catch (_) { /* continue to next package */ }
+            } catch (_) { /* ignore */ }
+        }
+
+        // Method 2: Try share intent
+        if (typeof Android !== 'undefined' && Android.share) {
+            try {
+                Android.share(url + '\n\nFilename: ' + filename);
+                Lampa.Noty.show('Share to download app...');
+                return true;
+            } catch (_) { /* ignore */ }
+        }
+
+        // Method 3: Native Web Share API
+        if (navigator.share) {
+            navigator.share({
+                title: filename,
+                text: 'Download: ' + filename,
+                url: url
+            }).then(() => {
+                Lampa.Noty.show('Shared!');
+            }).catch(() => {});
+            return true;
         }
 
         return false;
     }
 
-    // Open URL in YTDLnis app
-    function openInYtdlnis(url, filename) {
-        // YTDLnis intent - note: COMMAND extra was removed for security
-        // We can only pass URL and TYPE, not custom filename
-        const intentUrl = `intent:${url}#Intent;action=android.intent.action.SEND;package=com.deniscerri.ytdl;type=text/*;S.android.intent.extra.TEXT=${encodeURIComponent(url)};S.TYPE=video;end`;
-
-        try {
-            window.location.href = intentUrl;
-            Lampa.Noty.show('Opening YTDLnis...');
-            return true;
-        } catch (_) { /* ignore */ }
-
-        return false;
+    // Copy URL and filename for manual paste
+    function copyForDownload(url, filename) {
+        copyToClipboard(url);
+        Lampa.Noty.show('URL copied! Paste in 1DM/ADM. Filename: ' + filename);
+        return true;
     }
 
     // ========== GET FILE SIZE (with cache) ==========
@@ -353,14 +363,13 @@
                 // HLS options - direct URL extraction
                 const directUrl = extractDirectUrl(url) || url;
 
-                items.push({ title: '1DM (Download)', subtitle: filename + '.mp4', id: '1dm', directUrl });
-                items.push({ title: 'YTDLnis', subtitle: 'Без назви файлу', id: 'ytdlnis', directUrl });
+                items.push({ title: 'Download (1DM/ADM)', subtitle: filename + '.mp4', id: 'dlmanager', directUrl });
                 items.push({ title: 'External Player', subtitle: 'MX Player, VLC', id: 'external' });
+                items.push({ title: 'Copy URL + Filename', subtitle: 'Manual paste', id: 'copyurl', directUrl });
                 items.push({ title: 'Copy yt-dlp command', subtitle: 'For Termux', id: 'ytdlp', directUrl });
             } else {
                 // Direct MP4 options
-                items.push({ title: '1DM (Download)', subtitle: filename + '.mp4' + sizeText + subText, id: '1dm' });
-                items.push({ title: 'ADM (Download)', subtitle: 'Alternative', id: 'download' });
+                items.push({ title: 'Download (1DM/ADM)', subtitle: filename + '.mp4' + sizeText + subText, id: 'dlmanager' });
                 items.push({ title: 'External Player', subtitle: 'MX Player, VLC', id: 'external' });
             }
         }
@@ -374,12 +383,15 @@
                 Lampa.Select.close();
                 if (item.id === 'download') {
                     doDownload(url, filename, subtitles);
-                } else if (item.id === '1dm') {
+                } else if (item.id === 'dlmanager') {
                     const dlUrl = item.directUrl || url;
-                    openIn1DM(dlUrl, filename + '.mp4');
-                } else if (item.id === 'ytdlnis') {
+                    // Try to open in download manager, fallback to copy
+                    if (!openExternalDownloader(dlUrl, filename + '.mp4')) {
+                        copyForDownload(dlUrl, filename + '.mp4');
+                    }
+                } else if (item.id === 'copyurl') {
                     const dlUrl = item.directUrl || url;
-                    openInYtdlnis(dlUrl, filename);
+                    copyForDownload(dlUrl, filename + '.mp4');
                 } else if (item.id === 'external') {
                     doExternal(url, filename);
                 } else if (item.id === 'ytdlp') {
