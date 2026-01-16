@@ -332,13 +332,18 @@
         }
 
         // ========== INTERCEPT Lampa.Player.play() ==========
-        // Capture URL when video starts playing
+        // Capture URL when video starts playing - ADD to existing, don't replace
         if (Lampa.Player && Lampa.Player.play) {
             var originalPlay = Lampa.Player.play;
             Lampa.Player.play = function(params) {
                 if (params && params.url) {
-                    capturedUrls = [{ label: 'Current', url: params.url, quality: params.quality || '' }];
-                    console.log('[DLHelper] Captured play URL:', params.url);
+                    // Only add if not already captured
+                    var exists = capturedUrls.some(function(u) { return u.url === params.url; });
+                    if (!exists) {
+                        // Add to beginning as "current"
+                        capturedUrls.unshift({ label: 'Current', url: params.url, quality: params.quality || '' });
+                    }
+                    console.log('[DLHelper] Play URL, total captured:', capturedUrls.length);
                 }
                 return originalPlay.apply(this, arguments);
             };
@@ -392,10 +397,15 @@
                 debug.push('---');
                 debug.push('URLs found: ' + urls.length);
 
-                // Store captured URLs
+                // Store captured URLs - ADD to existing, don't replace
                 if (urls.length > 0) {
-                    capturedUrls = urls;
-                    console.log('[DLHelper] Captured ' + urls.length + ' URLs from menu:', menuTitle);
+                    urls.forEach(function(newUrl) {
+                        var exists = capturedUrls.some(function(u) { return u.url === newUrl.url; });
+                        if (!exists) {
+                            capturedUrls.push(newUrl);
+                        }
+                    });
+                    console.log('[DLHelper] Total captured URLs:', capturedUrls.length);
                 }
 
                 // Add download button to action menu OR quality menu
