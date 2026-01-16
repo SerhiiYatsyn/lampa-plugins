@@ -323,6 +323,9 @@
 
         var items = [];
 
+        // Debug option to see what data is available
+        items.push({ title: '🔍 Debug Info', subtitle: 'Show available data', id: 'debug' });
+
         // Always show quality selector first
         items.push({ title: 'Select Quality', subtitle: 'Choose resolution before download', id: 'quality' });
 
@@ -339,6 +342,49 @@
             items: items,
             onSelect: function (item) {
                 Lampa.Select.close();
+
+                if (item.id === 'debug') {
+                    // Show debug info
+                    var debugInfo = [];
+
+                    try {
+                        var a = Lampa.Activity.active();
+                        if (a && a.card) {
+                            debugInfo.push('CARD: ' + (a.card.title || a.card.name || 'no title'));
+                        } else {
+                            debugInfo.push('CARD: null');
+                        }
+                    } catch(e) { debugInfo.push('CARD: error'); }
+
+                    try {
+                        var pd = Lampa.Player.playdata();
+                        if (pd) {
+                            debugInfo.push('PD.title: ' + (pd.title || 'none'));
+                            debugInfo.push('PD.name: ' + (pd.name || 'none'));
+                            debugInfo.push('PD.season: ' + (pd.season || 'none'));
+                            debugInfo.push('PD.episode: ' + (pd.episode || 'none'));
+                        } else {
+                            debugInfo.push('PLAYDATA: null');
+                        }
+                    } catch(e) { debugInfo.push('PLAYDATA: error'); }
+
+                    var el = document.querySelector('.player-info__name');
+                    debugInfo.push('PLAYER-INFO: ' + (el ? el.textContent.trim().substring(0, 50) : 'not found'));
+
+                    debugInfo.push('FILENAME: ' + getFilename('720p'));
+
+                    // Show in select menu
+                    var debugItems = debugInfo.map(function(info) {
+                        return { title: info };
+                    });
+
+                    Lampa.Select.show({
+                        title: 'Debug Info',
+                        items: debugItems,
+                        onBack: function() { showMenu(); }
+                    });
+                    return;
+                }
 
                 if (item.id === 'quality') {
                     // Show quality selector
