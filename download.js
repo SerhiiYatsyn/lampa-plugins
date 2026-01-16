@@ -320,6 +320,32 @@
     }
 
     // ========== QUALITY SELECTOR ==========
+    function fetchAllSizes(streams, callback) {
+        var results = [];
+        var completed = 0;
+        var total = streams.length;
+
+        if (total === 0) {
+            callback([]);
+            return;
+        }
+
+        streams.forEach(function(stream, index) {
+            // Skip size fetch for HLS streams
+            if (stream.url.indexOf('.m3u8') > -1) {
+                results[index] = { stream: stream, size: 0 };
+                completed++;
+                if (completed === total) callback(results);
+            } else {
+                getFileSize(stream.url, function(size) {
+                    results[index] = { stream: stream, size: size };
+                    completed++;
+                    if (completed === total) callback(results);
+                });
+            }
+        });
+    }
+
     function showQualitySelector(streams, returnTo) {
         if (!streams || streams.length === 0) {
             Lampa.Noty.show('No streams available');
@@ -331,28 +357,36 @@
             return;
         }
 
-        var items = streams.map(function(s) {
-            var subtitle = '';
-            if (s.bandwidth) {
-                subtitle = '~' + formatBytes(s.bandwidth / 8 * 3600) + '/hour';
-            }
-            return {
-                title: s.quality || 'Video',
-                subtitle: subtitle,
-                url: s.url,
-                quality: s.quality || 'Video'
-            };
-        });
+        Lampa.Noty.show('Fetching sizes...');
 
-        Lampa.Select.show({
-            title: 'Select Quality (' + streams.length + ')',
-            items: items,
-            onSelect: function(item) {
-                Lampa.Select.close();
-                showDownloadMenuWithSize(item.url, item.quality, returnTo);
-            },
-            onBack: function() { Lampa.Controller.toggle(returnTo); },
-            _dlHelper: true
+        fetchAllSizes(streams, function(results) {
+            var items = results.map(function(r) {
+                var subtitle = '';
+                if (r.size) {
+                    subtitle = formatBytes(r.size);
+                } else if (r.stream.bandwidth) {
+                    subtitle = '~' + formatBytes(r.stream.bandwidth / 8 * 3600) + '/hour';
+                }
+                return {
+                    title: r.stream.quality || 'Video',
+                    subtitle: subtitle,
+                    url: r.stream.url,
+                    quality: r.stream.quality || 'Video',
+                    size: r.size
+                };
+            });
+
+            Lampa.Select.show({
+                title: 'Select Quality (' + streams.length + ')',
+                items: items,
+                onSelect: function(item) {
+                    Lampa.Select.close();
+                    // Pass size directly since we already have it
+                    showDownloadMenu(item.url, item.quality, returnTo, item.size);
+                },
+                onBack: function() { Lampa.Controller.toggle(returnTo); },
+                _dlHelper: true
+            });
         });
     }
 
