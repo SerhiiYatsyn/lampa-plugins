@@ -17,9 +17,15 @@
         return true;
     }
 
+    function formatBytes(bytes) {
+        if (!bytes || bytes <= 0) return '';
+        var sizes = ['B', 'KB', 'MB', 'GB'];
+        var i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + sizes[i];
+    }
+
     // ========== STORAGE ==========
     var savedCard = null;
-    var capturedStreams = null; // Store streams object from player
 
     // ========== FILENAME GENERATOR ==========
     function getFilename(quality) {
@@ -59,7 +65,97 @@
         return filename || 'video';
     }
 
-    // ========== DOWNLOAD ACTION ==========
+    // ========== GET CURRENT URL ==========
+    function getCurrentUrl() {
+        // Try Lampa.Player.playdata()
+        try {
+            var pd = Lampa.Player.playdata();
+            if (pd && pd.url && typeof pd.url === 'string' && pd.url.indexOf('http') === 0) {
+                return pd.url;
+            }
+        } catch (e) {}
+
+        // Try video element
+        try {
+            var v = document.querySelector('video');
+            if (v && v.src && v.src.indexOf('http') === 0) {
+                return v.src;
+            }
+        } catch (e) {}
+
+        return null;
+    }
+
+    // ========== EXTRACT QUALITY FROM URL ==========
+    function extractQualityFromUrl(url) {
+        if (!url) return null;
+        var patterns = [
+            /[_\/\-](\d{3,4}p)[_\/\.\-]/i,
+            /quality[=_]?(\d{3,4})/i,
+            /[_\/\-](\d{3,4})[_\/\.\-]/
+        ];
+        for (var i = 0; i < patterns.length; i++) {
+            var match = url.match(patterns[i]);
+            if (match) {
+                var q = match[1];
+                return q.toLowerCase().indexOf('p') === -1 ? q + 'p' : q;
+            }
+        }
+        return null;
+    }
+
+    // ========== GET QUALITIES FROM PLAYDATA ==========
+    function getQualitiesFromPlaydata() {
+        try {
+            var pd = Lampa.Player.playdata();
+            if (!pd) return null;
+
+            // Check if playdata has quality object like {"1080p": url, "720p": url}
+            if (pd.quality && typeof pd.quality === 'object' && !Array.isArray(pd.quality)) {
+                var qualities = [];
+                var keys = Object.keys(pd.quality);
+                for (var i = 0; i < keys.length; i++) {
+                    var key = keys[i];
+                    var val = pd.quality[key];
+                    if (typeof val === 'string' && val.indexOf('http') === 0) {
+                        qualities.push({
+                            url: val,
+                            quality: key,
+                            bandwidth: 0
+                        });
+                    }
+                }
+                if (qualities.length > 1) {
+                    // Sort by quality (higher first)
+                    qualities.sort(function(a, b) {
+                        var aNum = parseInt(a.quality) || 0;
+                        var bNum = parseInt(b.quality) || 0;
+                        return bNum - aNum;
+                    });
+                    return qualities;
+                }
+            }
+
+            // Check for playlist array
+            if (pd.playlist && Array.isArray(pd.playlist) && pd.playlist.length > 1) {
+                var qualities = [];
+                for (var i = 0; i < pd.playlist.length; i++) {
+                    var item = pd.playlist[i];
+                    if (item && item.url) {
+                        qualities.push({
+                            url: item.url,
+                            quality: item.quality || item.title || extractQualityFromUrl(item.url) || 'Quality ' + (i + 1),
+                            bandwidth: 0
+                        });
+                    }
+                }
+                if (qualities.length > 1) return qualities;
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    // ========== DOWNLOAD ACTIONS ==========
     function doDownload(url, quality) {
         var filename = getFilename(quality);
         var dlUrl = url + '#filename=' + encodeURIComponent(filename + '.mp4');
@@ -73,30 +169,51 @@
         Lampa.Noty.show('Opening player...');
     }
 
+    // ========== GET FILE SIZE ==========
+    function getFileSize(url, callback) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('HEAD', url, true);
+        xhr.timeout = 5000;
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4) {
+                if (xhr.status === 200) {
+                    var size = xhr.getResponseHeader('Content-Length');
+                    callback(size ? parseInt(size, 10) : 0);
+                } else {
+                    callback(0);
+                }
+            }
+        };
+        xhr.onerror = function() { callback(0); };
+        xhr.ontimeout = function() { callback(0); };
+        xhr.send();
+    }
+
     // ========== DOWNLOAD MENU ==========
-    function showDownloadMenu(url, quality, returnTo) {
+    function showDownloadMenu(url, quality, returnTo, fileSize) {
         if (!url || url.indexOf('http') !== 0) {
             Lampa.Noty.show('Invalid URL');
             return;
         }
 
-        returnTo = returnTo || 'content';
+        returnTo = returnTo || 'player';
         var androidAvailable = Lampa.Android && Lampa.Android.openPlayer;
         var filename = getFilename(quality);
+        var sizeText = fileSize ? ' (' + formatBytes(fileSize) + ')' : '';
 
         var items = [
-            { title: '🔗 Show URL', subtitle: url.substring(0, 45) + '...', id: 'showurl' }
+            { title: '🔗 Show URL', subtitle: url.substring(0, 50) + '...', id: 'showurl' }
         ];
 
         if (androidAvailable) {
-            items.push({ title: '📥 ADM / 1DM / DVGet', subtitle: filename + '.mp4', id: 'download' });
+            items.push({ title: '📥 ADM / 1DM / DVGet', subtitle: filename + '.mp4' + sizeText, id: 'download' });
             items.push({ title: '▶️ External Player', subtitle: 'VLC, MX...', id: 'external' });
         }
 
         items.push({ title: '📋 Copy URL', id: 'copy' });
 
         Lampa.Select.show({
-            title: 'Download: ' + filename.substring(0, 25),
+            title: 'Download: ' + quality + sizeText,
             items: items,
             onSelect: function(item) {
                 Lampa.Select.close();
@@ -108,8 +225,8 @@
                     copyToClipboard(url);
                     Lampa.Noty.show('Copied!');
                 } else if (item.id === 'showurl') {
-                    Lampa.Noty.show(url.substring(0, 80));
                     copyToClipboard(url);
+                    Lampa.Noty.show(url.substring(0, 100));
                 }
                 Lampa.Controller.toggle(returnTo);
             },
@@ -118,38 +235,91 @@
         });
     }
 
-    // ========== QUALITY SELECTOR ==========
-    function getQualityLabel(stream) {
-        var label = stream.quality || stream.label || stream.title || 'Video';
-        // Handle object - try to get a string from it
-        if (typeof label === 'object' && label !== null) {
-            label = label.title || label.name || label.quality || label.label || JSON.stringify(label).substring(0, 30);
+    // Show download menu with file size fetching
+    function showDownloadMenuWithSize(url, quality, returnTo) {
+        // For HLS streams, don't try to get size
+        if (url.indexOf('.m3u8') > -1) {
+            showDownloadMenu(url, quality, returnTo, 0);
+            return;
         }
-        return String(label);
+        // Try to get file size for direct URLs
+        getFileSize(url, function(size) {
+            showDownloadMenu(url, quality, returnTo, size);
+        });
     }
 
-    function formatBytes(bytes) {
-        if (!bytes || bytes <= 0) return '';
-        var sizes = ['B', 'KB', 'MB', 'GB'];
-        var i = Math.floor(Math.log(bytes) / Math.log(1024));
-        return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + sizes[i];
+    // ========== HLS PARSER ==========
+    function parseHlsMaster(m3u8Text, baseUrl) {
+        var streams = [];
+        var lines = m3u8Text.split('\n');
+        var currentInfo = null;
+
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim();
+
+            // Parse stream info
+            if (line.indexOf('#EXT-X-STREAM-INF:') === 0) {
+                currentInfo = {};
+                // Extract BANDWIDTH
+                var bwMatch = line.match(/BANDWIDTH=(\d+)/);
+                if (bwMatch) currentInfo.bandwidth = parseInt(bwMatch[1], 10);
+                // Extract RESOLUTION
+                var resMatch = line.match(/RESOLUTION=(\d+x\d+)/);
+                if (resMatch) currentInfo.resolution = resMatch[1];
+            }
+            // URL line after stream info
+            else if (currentInfo && line && !line.startsWith('#')) {
+                var streamUrl = line;
+                // Handle relative URLs
+                if (streamUrl.indexOf('http') !== 0) {
+                    var baseParts = baseUrl.split('/');
+                    baseParts.pop();
+                    streamUrl = baseParts.join('/') + '/' + streamUrl;
+                }
+
+                var quality = currentInfo.resolution || (currentInfo.bandwidth ? Math.round(currentInfo.bandwidth / 1000) + 'kbps' : 'Stream');
+                streams.push({
+                    url: streamUrl,
+                    quality: quality,
+                    bandwidth: currentInfo.bandwidth || 0
+                });
+                currentInfo = null;
+            }
+        }
+
+        // Sort by bandwidth (highest first)
+        streams.sort(function(a, b) { return b.bandwidth - a.bandwidth; });
+
+        return streams;
     }
 
-    function fetchFileSize(url, callback) {
+    function fetchHlsVariants(url, callback) {
         var xhr = new XMLHttpRequest();
-        xhr.open('HEAD', url, true);
-        xhr.timeout = 5000;
+        xhr.open('GET', url, true);
+        xhr.timeout = 10000;
         xhr.onreadystatechange = function() {
             if (xhr.readyState === 4) {
-                var size = xhr.getResponseHeader('Content-Length');
-                callback(size ? parseInt(size, 10) : 0);
+                if (xhr.status === 200 && xhr.responseText) {
+                    var text = xhr.responseText;
+                    // Check if it's a master playlist (has STREAM-INF)
+                    if (text.indexOf('#EXT-X-STREAM-INF') > -1) {
+                        var streams = parseHlsMaster(text, url);
+                        callback(streams);
+                    } else {
+                        // It's a media playlist, not master - just return original URL
+                        callback([{ url: url, quality: 'Default', bandwidth: 0 }]);
+                    }
+                } else {
+                    callback([{ url: url, quality: 'Default', bandwidth: 0 }]);
+                }
             }
         };
-        xhr.onerror = function() { callback(0); };
-        xhr.ontimeout = function() { callback(0); };
+        xhr.onerror = function() { callback([{ url: url, quality: 'Default', bandwidth: 0 }]); };
+        xhr.ontimeout = function() { callback([{ url: url, quality: 'Default', bandwidth: 0 }]); };
         xhr.send();
     }
 
+    // ========== QUALITY SELECTOR ==========
     function showQualitySelector(streams, returnTo) {
         if (!streams || streams.length === 0) {
             Lampa.Noty.show('No streams available');
@@ -157,144 +327,72 @@
         }
 
         if (streams.length === 1) {
-            showDownloadMenu(streams[0].url, getQualityLabel(streams[0]), returnTo);
+            showDownloadMenuWithSize(streams[0].url, streams[0].quality || 'Video', returnTo);
             return;
         }
 
-        // Create items with loading subtitle
-        var items = streams.map(function(s, i) {
+        var items = streams.map(function(s) {
+            var subtitle = '';
+            if (s.bandwidth) {
+                subtitle = '~' + formatBytes(s.bandwidth / 8 * 3600) + '/hour';
+            }
             return {
-                title: getQualityLabel(s) || ('Quality ' + (i + 1)),
-                subtitle: 'Loading size...',
-                url: s.url
+                title: s.quality || 'Video',
+                subtitle: subtitle,
+                url: s.url,
+                quality: s.quality || 'Video'
             };
         });
 
-        // Show menu immediately
         Lampa.Select.show({
-            title: 'Select Quality',
+            title: 'Select Quality (' + streams.length + ')',
             items: items,
             onSelect: function(item) {
                 Lampa.Select.close();
-                showDownloadMenu(item.url, item.title, returnTo);
+                showDownloadMenuWithSize(item.url, item.quality, returnTo);
             },
             onBack: function() { Lampa.Controller.toggle(returnTo); },
             _dlHelper: true
         });
-
-        // Fetch sizes in background and update
-        items.forEach(function(item, index) {
-            fetchFileSize(item.url, function(size) {
-                var sizeText = size > 0 ? formatBytes(size) : 'Unknown size';
-                // Update the item subtitle
-                items[index].subtitle = sizeText;
-                // Try to update displayed element
-                try {
-                    var elements = document.querySelectorAll('.selectbox .selectbox-item');
-                    if (elements[index]) {
-                        var subtitle = elements[index].querySelector('.selectbox-item__subtitle');
-                        if (subtitle) subtitle.textContent = sizeText;
-                    }
-                } catch(e) {}
-            });
-        });
     }
 
-    // ========== HELPER: Parse URL/Quality ==========
-    function parseStreamData(data, defaultQuality) {
-        var results = [];
-
-        // If it's a string URL
-        if (typeof data === 'string' && data.indexOf('http') === 0) {
-            results.push({ url: data, quality: defaultQuality || 'Video' });
-        }
-        // If it's an object with quality -> URL mapping
-        else if (typeof data === 'object' && data !== null) {
-            Object.keys(data).forEach(function(key) {
-                var val = data[key];
-                if (typeof val === 'string' && val.indexOf('http') === 0) {
-                    results.push({ url: val, quality: key });
-                }
-            });
-        }
-
-        return results;
-    }
-
-    // ========== PLAYER BUTTON ==========
-    function getPlayerStreams() {
-        var streams = [];
-
-        try {
-            var pd = Lampa.Player.playdata();
-            if (pd) {
-                // Parse pd.url - might be string or object
-                if (pd.url) {
-                    var parsed = parseStreamData(pd.url, pd.quality || 'Current');
-                    parsed.forEach(function(p) {
-                        if (streams.every(function(s) { return s.url !== p.url; })) {
-                            streams.push(p);
-                        }
-                    });
-                }
-
-                // Check for urls object
-                if (pd.urls) {
-                    var parsed2 = parseStreamData(pd.urls, 'Video');
-                    parsed2.forEach(function(p) {
-                        if (streams.every(function(s) { return s.url !== p.url; })) {
-                            streams.push(p);
-                        }
-                    });
-                }
-
-                // Check for playlist
-                if (pd.playlist && Array.isArray(pd.playlist)) {
-                    pd.playlist.forEach(function(item) {
-                        var parsed3 = parseStreamData(item.url || item, item.title || item.quality || 'Video');
-                        parsed3.forEach(function(p) {
-                            if (streams.every(function(s) { return s.url !== p.url; })) {
-                                streams.push(p);
-                            }
-                        });
-                    });
-                }
-            }
-        } catch (e) {}
-
-        // Fallback: video element
-        if (streams.length === 0) {
-            try {
-                var v = document.querySelector('video');
-                if (v && v.src && v.src.indexOf('http') === 0) {
-                    streams.push({ url: v.src, quality: 'Current' });
-                }
-            } catch (e) {}
-        }
-
-        // Add captured streams
-        if (capturedStreams && capturedStreams.length > 0) {
-            capturedStreams.forEach(function(s) {
-                if (s.url && typeof s.url === 'string' && streams.every(function(x) { return x.url !== s.url; })) {
-                    streams.push({ url: s.url, quality: typeof s.quality === 'string' ? s.quality : 'Captured' });
-                }
-            });
-        }
-
-        return streams;
-    }
-
+    // ========== PLAYER MENU ==========
     function showPlayerMenu() {
-        var streams = getPlayerStreams();
+        var url = getCurrentUrl();
 
-        if (streams.length === 0) {
+        if (!url) {
             Lampa.Noty.show('No URL. Play video first!');
             return;
         }
 
-        showQualitySelector(streams, 'player');
+        Lampa.Noty.show('Loading...');
+
+        // Method 1: Try to get qualities from Lampa.Player.playdata()
+        var pdQualities = getQualitiesFromPlaydata();
+        if (pdQualities && pdQualities.length > 1) {
+            showQualitySelector(pdQualities, 'player');
+            return;
+        }
+
+        // Method 2: Check if it's an HLS stream and parse master playlist
+        if (url.indexOf('.m3u8') > -1 || url.indexOf('m3u8') > -1) {
+            fetchHlsVariants(url, function(streams) {
+                if (streams.length > 1) {
+                    showQualitySelector(streams, 'player');
+                } else {
+                    // Single stream - extract quality from URL or use default
+                    var quality = extractQualityFromUrl(url) || 'Video';
+                    showDownloadMenuWithSize(url, quality, 'player');
+                }
+            });
+        } else {
+            // Method 3: Direct URL - extract quality from URL pattern
+            var quality = extractQualityFromUrl(url) || 'Video';
+            showDownloadMenuWithSize(url, quality, 'player');
+        }
     }
 
+    // ========== PLAYER BUTTON ==========
     function addPlayerButton() {
         if (document.querySelector('.dlhelper-btn')) return;
         var panel = document.querySelector('.player-panel__right');
@@ -315,18 +413,12 @@
     function startPlugin() {
         window.lampa_download_helper = true;
 
-        // Capture card and reset streams on new content
+        // Capture card
         Lampa.Listener.follow('full', function (e) {
             if (e.type === 'complite') setTimeout(addPlayerButton, 500);
             try {
                 var a = Lampa.Activity.active();
-                if (a && a.card) {
-                    // If different card, reset captured streams
-                    if (!savedCard || savedCard.id !== a.card.id) {
-                        capturedStreams = null;
-                    }
-                    savedCard = a.card;
-                }
+                if (a && a.card) savedCard = a.card;
             } catch(e) {}
         });
 
@@ -337,7 +429,7 @@
             });
         }
 
-        // ========== INTERCEPT Select.show ==========
+        // ========== INTERCEPT Select.show for "Действие" menu ==========
         var originalSelectShow = Lampa.Select.show;
 
         Lampa.Select.show = function(params) {
@@ -349,54 +441,13 @@
                 var menuTitle = (params.title || '').toLowerCase();
                 var isActionMenu = menuTitle.indexOf('действие') > -1 || menuTitle.indexOf('action') > -1;
 
-                // Only extract streams from menus that look like quality selectors
-                // (items with file() functions that return URLs)
-                var streams = [];
-                var hasFileFunction = false;
-
-                params.items.forEach(function(item) {
-                    // Check for file() function - this is the main indicator of a quality menu
-                    if (typeof item.file === 'function') {
-                        hasFileFunction = true;
-                        try {
-                            var result = item.file();
-
-                            // Result is a direct URL string
-                            if (typeof result === 'string' && result.indexOf('http') === 0) {
-                                streams.push({ url: result, quality: item.title || 'Video' });
-                            }
-                            // Result is an object with quality -> URL mapping
-                            else if (typeof result === 'object' && result !== null && !Array.isArray(result)) {
-                                Object.keys(result).forEach(function(quality) {
-                                    var url = result[quality];
-                                    if (typeof url === 'string' && url.indexOf('http') === 0) {
-                                        streams.push({ url: url, quality: quality });
-                                    }
-                                });
-                            }
-                        } catch(e) {}
-                    }
-                });
-
-                // Only store if we found actual streams from file() functions
-                // This avoids capturing episode lists or other menus
-                if (hasFileFunction && streams.length > 0) {
-                    capturedStreams = streams;
-                }
-
-                // Add download button to action menu
                 if (isActionMenu) {
                     params.items.push({
                         title: '⬇️ Download',
-                        subtitle: (capturedStreams && capturedStreams.length > 0) ? capturedStreams.length + ' qualities' : 'Current only',
+                        subtitle: 'Current stream',
                         onSelect: function() {
                             Lampa.Select.close();
-                            var toDownload = (capturedStreams && capturedStreams.length > 0) ? capturedStreams : getPlayerStreams();
-                            if (toDownload.length === 0) {
-                                Lampa.Noty.show('No URLs. Play video first!');
-                                return;
-                            }
-                            showQualitySelector(toDownload, 'content');
+                            showPlayerMenu();
                         }
                     });
                 }
