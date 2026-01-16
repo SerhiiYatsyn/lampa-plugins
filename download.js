@@ -830,38 +830,54 @@
                                    menuTitle === 'действие';
 
                 if (isActionMenu) {
-                    // Try to get URL from multiple sources
-                    var streamUrl = params.url ||
-                                    params.file ||
-                                    params.stream ||
-                                    lastStreamUrl;
+                    // Try to get URL from Lampa's online component
+                    var streamUrl = lastStreamUrl;
+                    var streamTitle = lastStreamTitle || 'video';
 
-                    // Also try to extract from items (some plugins store URL in item)
-                    if (!streamUrl && params.items.length > 0) {
-                        for (var i = 0; i < params.items.length; i++) {
-                            var item = params.items[i];
-                            if (item.url || item.file || item.stream || item.link) {
-                                streamUrl = item.url || item.file || item.stream || item.link;
-                                break;
-                            }
+                    // Try to get from Lampa.Player if available
+                    try {
+                        var pd = Lampa.Player.playdata();
+                        if (pd && pd.url) {
+                            streamUrl = pd.url;
+                            streamTitle = pd.title || streamTitle;
                         }
-                    }
+                    } catch(e) {}
 
-                    var streamTitle = lastStreamTitle || params.title || 'video';
+                    // Try to get from Activity's component
+                    try {
+                        var activity = Lampa.Activity.active();
+                        if (activity && activity.component) {
+                            var comp = activity.component;
+                            if (comp.url) streamUrl = comp.url;
+                            if (comp.video && comp.video.url) streamUrl = comp.video.url;
+                        }
+                    } catch(e) {}
 
-                    // Add Download option
+                    // Add Download option - will try to get URL when clicked
                     params.items.push({
                         title: '⬇️ Download',
-                        subtitle: streamUrl ? 'Save to device' : 'URL: check debug',
+                        subtitle: 'Save video',
                         onSelect: function() {
                             Lampa.Select.close();
-                            if (streamUrl) {
-                                showDownloadMenu(streamUrl, streamTitle);
+
+                            // Try to get URL at click time
+                            var urlToDownload = streamUrl;
+                            var titleToDownload = streamTitle;
+
+                            // Last attempt - check playdata again
+                            try {
+                                var pd = Lampa.Player.playdata();
+                                if (pd && pd.url) {
+                                    urlToDownload = pd.url;
+                                    titleToDownload = pd.title || titleToDownload;
+                                }
+                            } catch(e) {}
+
+                            if (urlToDownload) {
+                                showDownloadMenu(urlToDownload, titleToDownload);
                             } else {
-                                // Show debug info about params
-                                var keys = Object.keys(params).join(', ');
-                                Lampa.Noty.show('No URL. Keys: ' + keys);
-                                console.log('[DLHelper] Action menu params:', params);
+                                // No URL - ask user to play first, then use player button
+                                Lampa.Noty.show('Play video first, then use download button in player');
                             }
                         }
                     });
