@@ -869,12 +869,63 @@
             };
         }
 
+        // Store pending download request - when user clicks Download, we'll capture the next quality menu
+        var pendingDownload = null;
+
         // Intercept Select.show to add download option to player action menu
         var originalSelectShow = Lampa.Select.show;
 
         Lampa.Select.show = function(params) {
             if (params && params.items && Array.isArray(params.items) && !params._dlHelperProcessed) {
                 params._dlHelperProcessed = true;
+
+                // Check if this is a quality selection menu (opened after clicking "Копировать ссылку")
+                // These menus typically have items with copylink property and quality in title
+                var hasQualityItems = params.items.some(function(item) {
+                    var title = (item.title || '').toLowerCase();
+                    return (item.copylink || item.url || item.file) &&
+                           (title.indexOf('720') > -1 || title.indexOf('480') > -1 ||
+                            title.indexOf('1080') > -1 || title.indexOf('360') > -1 ||
+                            title.indexOf('2160') > -1 || title.indexOf('4k') > -1 ||
+                            title.indexOf('hd') > -1 || title.indexOf('sd') > -1);
+                });
+
+                // If we have a pending download and this looks like a quality menu
+                if (pendingDownload && hasQualityItems) {
+                    var qualities = [];
+                    params.items.forEach(function(item) {
+                        var url = item.copylink || item.url || item.file || item.link;
+                        if (url) {
+                            qualities.push({ label: item.title || 'Unknown', url: url });
+                        }
+                    });
+
+                    if (qualities.length > 0) {
+                        // Show our download quality selector instead
+                        var epInfo = pendingDownload.episodeInfo;
+                        var videoTitle = pendingDownload.videoTitle;
+                        pendingDownload = null;
+
+                        var downloadItems = qualities.map(function(q) {
+                            return { title: q.label, url: q.url };
+                        });
+
+                        Lampa.Select.show({
+                            title: 'Download - Select Quality',
+                            items: downloadItems,
+                            onSelect: function(selected) {
+                                Lampa.Select.close();
+                                showDownloadMenu(selected.url, videoTitle, epInfo);
+                            },
+                            onBack: function() {
+                                pendingDownload = null;
+                                Lampa.Controller.toggle('content');
+                            },
+                            _dlHelperProcessed: true
+                        });
+                        return; // Don't show original menu
+                    }
+                }
 
                 // Check if this is the "Действие" menu (player action menu)
                 var menuTitle = (params.title || '').toLowerCase();
@@ -961,112 +1012,56 @@
                         }
                     });
 
+                    // Find "Копировать ссылку" item to trigger quality menu
+                    var copyLinkItem = null;
+                    for (var j = 0; j < params.items.length; j++) {
+                        var itm = params.items[j];
+                        var itmTitle = (itm.title || '').toLowerCase();
+                        if (itmTitle.indexOf('копировать') > -1 || itmTitle.indexOf('copy') > -1) {
+                            copyLinkItem = itm;
+                            break;
+                        }
+                    }
+
                     // Add Download option
                     params.items.push({
                         title: '⬇️ Download',
-                        subtitle: foundUrl ? (qualityUrls.length > 1 ? qualityUrls.length + ' qualities' : 'URL found!') : 'Will try to capture',
-                        _playerItem: playerItem,
+                        subtitle: copyLinkItem ? 'Select quality' : (foundUrl ? 'URL found!' : 'No URL'),
+                        _copyLinkItem: copyLinkItem,
                         _foundUrl: foundUrl,
-                        _qualityUrls: qualityUrls,
                         _videoTitle: videoTitle,
                         _episodeInfo: episodeInfo,
                         onSelect: function() {
                             Lampa.Select.close();
 
-                            // If we have multiple quality URLs, show selector
-                            if (this._qualityUrls && this._qualityUrls.length > 1) {
-                                var self = this;
-                                var qualityItems = this._qualityUrls.map(function(q) {
-                                    // Extract quality label from title (e.g., "Копировать ссылку на 720p")
-                                    var label = q.label.replace('Копировать ссылку на ', '').replace('Copy link ', '');
-                                    return { title: label, url: q.url };
-                                });
+                            // If we have a "Копировать ссылку" item, trigger it to open quality menu
+                            if (this._copyLinkItem && this._copyLinkItem.onSelect) {
+                                // Set pending download so we intercept the quality menu
+                                pendingDownload = {
+                                    videoTitle: this._videoTitle,
+                                    episodeInfo: this._episodeInfo
+                                };
 
-                                Lampa.Select.show({
-                                    title: 'Select Quality',
-                                    items: qualityItems,
-                                    onSelect: function(selected) {
-                                        Lampa.Select.close();
-                                        showDownloadMenu(selected.url, self._videoTitle, self._episodeInfo);
-                                    },
-                                    onBack: function() {
-                                        Lampa.Controller.toggle('content');
+                                // Small delay to let menu close, then trigger copy link menu
+                                var copyItem = this._copyLinkItem;
+                                setTimeout(function() {
+                                    try {
+                                        copyItem.onSelect(copyItem);
+                                    } catch(e) {
+                                        pendingDownload = null;
+                                        Lampa.Noty.show('Error opening quality menu');
                                     }
-                                });
+                                }, 100);
                                 return;
                             }
 
-                            // First check if we have URL directly
+                            // Fallback: if we have URL directly
                             if (this._foundUrl) {
                                 showDownloadMenu(this._foundUrl, this._videoTitle, this._episodeInfo);
                                 return;
                             }
 
-                            // Get the player item reference
-                            var pItem = this._playerItem;
-
-                            if (!pItem || !pItem.onSelect) {
-                                Lampa.Noty.show('No player item found');
-                                return;
-                            }
-
-                            // Temporarily intercept openPlayer to capture URL
-                            var capturedUrl = null;
-                            var capturedTitle = '';
-
-                            var originalOpenPlayer = null;
-                            if (Lampa.Android && Lampa.Android.openPlayer) {
-                                originalOpenPlayer = Lampa.Android.openPlayer;
-                                Lampa.Android.openPlayer = function(url, titleJson) {
-                                    capturedUrl = url;
-                                    try {
-                                        var parsed = JSON.parse(titleJson);
-                                        capturedTitle = parsed.title || '';
-                                    } catch(e) {
-                                        capturedTitle = titleJson || '';
-                                    }
-                                    console.log('[DLHelper] Intercepted URL:', url.substring(0, 50));
-                                    // Don't actually open player
-                                };
-                            }
-
-                            // Also intercept Player.play
-                            var originalPlayerPlay = null;
-                            if (Lampa.Player && Lampa.Player.play) {
-                                originalPlayerPlay = Lampa.Player.play;
-                                Lampa.Player.play = function(data) {
-                                    if (data && data.url) {
-                                        capturedUrl = data.url;
-                                        capturedTitle = data.title || '';
-                                    }
-                                    console.log('[DLHelper] Intercepted Player.play:', capturedUrl ? capturedUrl.substring(0, 50) : 'no url');
-                                    // Don't actually play
-                                };
-                            }
-
-                            // Call the player item's onSelect to trigger URL resolution
-                            try {
-                                pItem.onSelect(pItem);
-                            } catch(e) {
-                                console.log('[DLHelper] Error calling player onSelect:', e);
-                            }
-
-                            // Restore original functions
-                            if (originalOpenPlayer) {
-                                Lampa.Android.openPlayer = originalOpenPlayer;
-                            }
-                            if (originalPlayerPlay) {
-                                Lampa.Player.play = originalPlayerPlay;
-                            }
-
-                            // Now use the captured URL
-                            if (capturedUrl) {
-                                // Remove any #filename that might have been added
-                                var cleanUrl = capturedUrl.split('#')[0];
-                                showDownloadMenu(cleanUrl, capturedTitle || 'video');
-                            } else {
-                                Lampa.Noty.show('Could not capture URL');
-                            }
+                            Lampa.Noty.show('No download source found');
                         }
                     });
                 }
