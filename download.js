@@ -208,27 +208,30 @@
     }
 
     function showPlayerMenu() {
-        // Build list of available URLs
+        // Get current URL from player
+        var currentUrl = getVideoUrl();
+
+        // Debug info
+        Lampa.Noty.show('URLs: ' + capturedUrls.length + ', Current: ' + (currentUrl ? 'yes' : 'no'));
+
+        // Build list - prioritize current URL
         var urlList = [];
 
-        // Add captured URLs
-        if (capturedUrls.length > 0) {
-            capturedUrls.forEach(function(u) {
-                urlList.push({ url: u.url, label: u.label || u.quality || '' });
-            });
+        // Always add current URL first if available
+        if (currentUrl) {
+            urlList.push({ url: currentUrl, label: 'Current quality' });
         }
 
-        // Add current playing URL if not already in list
-        var currentUrl = getVideoUrl();
-        if (currentUrl) {
-            var alreadyHas = urlList.some(function(u) { return u.url === currentUrl; });
-            if (!alreadyHas) {
-                urlList.unshift({ url: currentUrl, label: 'Current' });
+        // Add other captured URLs (avoid duplicates)
+        capturedUrls.forEach(function(u) {
+            var isDupe = urlList.some(function(x) { return x.url === u.url; });
+            if (!isDupe) {
+                urlList.push({ url: u.url, label: u.label || u.quality || 'Other' });
             }
-        }
+        });
 
         if (urlList.length === 0) {
-            Lampa.Noty.show('No URL. Play video first!');
+            Lampa.Noty.show('No URL available');
             return;
         }
 
