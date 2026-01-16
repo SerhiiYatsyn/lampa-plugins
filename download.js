@@ -130,10 +130,23 @@
         var card = null;
         var pd = null;
 
-        // Get card data (series/movie info)
+        // Get card data from Activity (current or stack)
         try {
             var a = Lampa.Activity.active();
-            if (a && a.card) card = a.card;
+            if (a && a.card) {
+                card = a.card;
+            } else {
+                // Search Activity stack for card (series name is often there)
+                var stack = Lampa.Activity.stack();
+                if (stack && stack.length > 0) {
+                    for (var i = stack.length - 1; i >= 0; i--) {
+                        if (stack[i].card) {
+                            card = stack[i].card;
+                            break;
+                        }
+                    }
+                }
+            }
         } catch (e) {}
 
         // Get player data
@@ -141,80 +154,41 @@
             pd = Lampa.Player.playdata();
         } catch (e) {}
 
-        // Debug: log available data
-        console.log('[DLHelper] card:', card ? JSON.stringify({
-            title: card.title,
-            name: card.name,
-            original_title: card.original_title,
-            year: card.year
-        }) : 'null');
-        console.log('[DLHelper] playdata:', pd ? JSON.stringify({
-            title: pd.title,
-            name: pd.name,
-            season: pd.season,
-            episode: pd.episode,
-            episode_title: pd.episode_title
-        }) : 'null');
-
         // Check if it's a series (has season/episode)
         var season = pd && pd.season;
         var episode = pd && pd.episode;
         var isSeries = season || episode;
 
-        // Get series/movie name
-        var title = '';
-
-        // Try player info element first (most reliable for series)
-        var playerInfoEl = document.querySelector('.player-info__name');
-        if (playerInfoEl) {
-            var playerText = playerInfoEl.textContent.trim();
-            console.log('[DLHelper] player-info__name:', playerText);
-
-            if (isSeries) {
-                // Extract series name from "SeriesName - S1E5" or "SeriesName / Season X / Episode"
-                var seriesMatch = playerText.match(/^(.+?)(?:\s*[-–\/]\s*[SsСс]\d|$)/);
-                if (seriesMatch) {
-                    title = seriesMatch[1].trim();
-                }
-            } else {
-                title = playerText;
-            }
+        // Get series/movie name from card
+        var seriesName = '';
+        if (card) {
+            seriesName = card.title || card.name || '';
         }
 
-        // Fallback to card data
-        if (!title && card) {
-            title = card.title || card.name || '';
+        // Get episode name from playdata
+        var episodeName = '';
+        if (pd && pd.title) {
+            episodeName = pd.title;
         }
-
-        // Fallback to playdata title
-        if (!title && pd && pd.title) {
-            title = pd.title;
-        }
-
-        if (title) parts.push(title);
 
         if (isSeries) {
+            // Series: "Series Name - S01E05 - Episode Name - 720p"
+            if (seriesName) parts.push(seriesName);
+
             // Add S01E05 format
             var se = 'S' + String(season || 1).padStart(2, '0') + 'E' + String(episode || 1).padStart(2, '0');
             parts.push(se);
 
-            // Try to get episode name
-            var episodeName = '';
-            if (pd && pd.episode_title) {
-                episodeName = pd.episode_title;
-            } else if (pd && pd.name) {
-                episodeName = pd.name;
-            } else if (playerInfoEl) {
-                // Try to extract from player info (usually "SeriesName - S1E5 - EpisodeName")
-                var text = playerInfoEl.textContent.trim();
-                var match = text.match(/[SsСс]\d+[EeЕе]\d+\s*[-–]\s*(.+)/);
-                if (match) episodeName = match[1].trim();
-            }
-            if (episodeName && episodeName !== title) {
+            // Add episode name if different from series name
+            if (episodeName && episodeName !== seriesName) {
                 parts.push(episodeName);
             }
         } else {
-            // Movie - add year if available
+            // Movie: "Movie Name - 2024 - 720p"
+            var title = seriesName || episodeName || '';
+            if (title) parts.push(title);
+
+            // Add year if available
             var year = card && (card.year || card.release_date);
             if (year) {
                 if (typeof year === 'string' && year.length > 4) {
@@ -237,7 +211,6 @@
             .filter(function(p) { return p.length > 0; })
             .join(' - ');
 
-        console.log('[DLHelper] Generated filename:', filename);
         return filename || 'video';
     }
 
