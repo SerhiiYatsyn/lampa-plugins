@@ -1,6 +1,30 @@
 (function () {
     'use strict';
 
+    // Format bytes to human readable
+    function formatBytes(bytes) {
+        if (!bytes || bytes === 0) return '';
+        var sizes = ['B', 'KB', 'MB', 'GB'];
+        var i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + sizes[i];
+    }
+
+    // Get file size via HEAD request
+    function getFileSize(url, callback) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('HEAD', url, true);
+        xhr.timeout = 5000;
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4) {
+                var size = xhr.getResponseHeader('Content-Length');
+                callback(size ? parseInt(size, 10) : null);
+            }
+        };
+        xhr.onerror = function() { callback(null); };
+        xhr.ontimeout = function() { callback(null); };
+        xhr.send();
+    }
+
     function copyToClipboard(text) {
         if (navigator.clipboard) {
             navigator.clipboard.writeText(text);
@@ -41,6 +65,9 @@
 
     // Store card data when source is selected (before player starts)
     var savedCard = null;
+
+    // Store episodes list for batch download
+    var availableEpisodes = [];
 
     // Try to get all available quality URLs
     function getQualities() {
@@ -93,6 +120,61 @@
         });
 
         return qualities;
+    }
+
+    // Capture episode list for batch download
+    function captureEpisodes(data) {
+        try {
+            // Check for episodes array
+            if (data.episodes && Array.isArray(data.episodes)) {
+                availableEpisodes = data.episodes.map(function(ep, idx) {
+                    return {
+                        episode: ep.episode || idx + 1,
+                        season: ep.season || data.season || 1,
+                        title: ep.title || ep.name || '',
+                        url: ep.url || ep.file || '',
+                        quality: ep.quality || ''
+                    };
+                }).filter(function(ep) { return ep.url; });
+                console.log('[DLHelper] Captured episodes:', availableEpisodes.length);
+            }
+
+            // Check for playlist format
+            if (data.playlist && Array.isArray(data.playlist)) {
+                availableEpisodes = data.playlist.map(function(ep, idx) {
+                    return {
+                        episode: ep.episode || idx + 1,
+                        season: ep.season || data.season || 1,
+                        title: ep.title || ep.name || '',
+                        url: ep.url || ep.file || '',
+                        quality: ep.quality || ''
+                    };
+                }).filter(function(ep) { return ep.url; });
+                console.log('[DLHelper] Captured playlist:', availableEpisodes.length);
+            }
+
+            // Check for files array (common in Rezka-like sources)
+            if (data.files && typeof data.files === 'object') {
+                var eps = [];
+                for (var key in data.files) {
+                    if (data.files[key]) {
+                        eps.push({
+                            episode: parseInt(key) || eps.length + 1,
+                            season: data.season || 1,
+                            title: '',
+                            url: data.files[key],
+                            quality: ''
+                        });
+                    }
+                }
+                if (eps.length > 0) {
+                    availableEpisodes = eps;
+                    console.log('[DLHelper] Captured files:', availableEpisodes.length);
+                }
+            }
+        } catch(e) {
+            console.log('[DLHelper] Error capturing episodes:', e);
+        }
     }
 
     // Hook to capture quality data when source loads
@@ -286,6 +368,128 @@
         });
     }
 
+    // Batch download - show episode selection
+    function showBatchDownload() {
+        if (availableEpisodes.length === 0) {
+            Lampa.Noty.show('No episodes found for batch download');
+            return;
+        }
+
+        var pd = null;
+        try { pd = Lampa.Player.playdata(); } catch(e) {}
+        var currentSeason = pd && pd.season || 1;
+
+        // Create episode list items
+        var items = [
+            { title: 'Download ALL (' + availableEpisodes.length + ' eps)', id: 'all' },
+            { title: 'Select Range...', id: 'range' }
+        ];
+
+        // Add individual episodes
+        availableEpisodes.forEach(function(ep, idx) {
+            items.push({
+                title: 'E' + String(ep.episode).padStart(2, '0') + (ep.title ? ' - ' + ep.title : ''),
+                subtitle: ep.quality || '',
+                id: 'ep_' + idx,
+                episode: ep
+            });
+        });
+
+        Lampa.Select.show({
+            title: 'Batch Download - S' + String(currentSeason).padStart(2, '0'),
+            items: items,
+            onSelect: function(item) {
+                Lampa.Select.close();
+
+                if (item.id === 'all') {
+                    // Download all episodes
+                    startBatchDownload(availableEpisodes);
+                } else if (item.id === 'range') {
+                    // Show range selector
+                    showRangeSelector();
+                } else if (item.episode) {
+                    // Download single episode
+                    startBatchDownload([item.episode]);
+                }
+            },
+            onBack: function() {
+                showMenu();
+            }
+        });
+    }
+
+    // Range selector for batch download
+    function showRangeSelector() {
+        var items = [];
+        var maxEp = availableEpisodes.length;
+
+        // Quick ranges
+        if (maxEp >= 5) items.push({ title: 'Episodes 1-5', start: 1, end: 5 });
+        if (maxEp >= 10) items.push({ title: 'Episodes 1-10', start: 1, end: 10 });
+        if (maxEp >= 10) items.push({ title: 'Episodes 6-10', start: 6, end: 10 });
+        if (maxEp > 10) items.push({ title: 'Episodes 11-' + maxEp, start: 11, end: maxEp });
+        items.push({ title: 'All (' + maxEp + ' episodes)', start: 1, end: maxEp });
+
+        Lampa.Select.show({
+            title: 'Select Range',
+            items: items,
+            onSelect: function(item) {
+                Lampa.Select.close();
+                var selected = availableEpisodes.slice(item.start - 1, item.end);
+                startBatchDownload(selected);
+            },
+            onBack: function() {
+                showBatchDownload();
+            }
+        });
+    }
+
+    // Start downloading episodes one by one
+    function startBatchDownload(episodes) {
+        if (!episodes || episodes.length === 0) {
+            Lampa.Noty.show('No episodes to download');
+            return;
+        }
+
+        var androidAvailable = Lampa.Android && Lampa.Android.openPlayer;
+        if (!androidAvailable) {
+            // Copy all URLs
+            var urls = episodes.map(function(ep) { return ep.url; }).join('\n');
+            copyToClipboard(urls);
+            Lampa.Noty.show(episodes.length + ' URLs copied!');
+            return;
+        }
+
+        // Download with 1DM - open first episode, show list
+        Lampa.Noty.show('Starting batch: ' + episodes.length + ' episodes');
+
+        var delay = 0;
+        episodes.forEach(function(ep) {
+            setTimeout(function() {
+                var filename = getFilenameForEpisode(ep);
+                var dlUrl = ep.url + '#filename=' + encodeURIComponent(filename + '.mp4');
+                Lampa.Android.openPlayer(dlUrl, JSON.stringify({ title: filename }));
+            }, delay);
+            delay += 1500; // 1.5 second delay between each
+        });
+    }
+
+    // Generate filename for batch episode
+    function getFilenameForEpisode(ep) {
+        var parts = [];
+        if (savedCard) {
+            parts.push(savedCard.title || savedCard.name || '');
+        }
+        parts.push('S' + String(ep.season || 1).padStart(2, '0') + 'E' + String(ep.episode || 1).padStart(2, '0'));
+        if (ep.title) {
+            parts.push(ep.title);
+        }
+        if (ep.quality) {
+            parts.push(ep.quality);
+        }
+        return parts.filter(function(p) { return p; }).join(' - ').replace(/[<>:"/\\|?*]/g, '') || 'video';
+    }
+
     function showMenu() {
         var url = getVideoUrl();
         if (!url) {
@@ -303,6 +507,17 @@
 
         // Always show quality selector first
         items.push({ title: 'Select Quality', subtitle: 'Choose resolution before download', id: 'quality' });
+
+        // Check if this is a series with multiple episodes
+        var pd = null;
+        try { pd = Lampa.Player.playdata(); } catch(e) {}
+        if (pd && pd.season && availableEpisodes.length > 1) {
+            items.push({
+                title: 'Batch Download',
+                subtitle: availableEpisodes.length + ' episodes available',
+                id: 'batch'
+            });
+        }
 
         if (androidAvailable) {
             items.push({ title: 'Download with 1DM', subtitle: 'Current quality + filename', id: '1dm' });
@@ -377,18 +592,16 @@
                 if (item.id === 'quality') {
                     // Show quality selector
                     var qualities = getQualities();
-                    console.log('[DLHelper] Found qualities:', qualities.length, qualities);
 
                     if (qualities.length === 0) {
-                        // No qualities found, copy current URL
                         copyToClipboard(url);
                         Lampa.Noty.show('No qualities found. Current URL copied!');
                         return;
                     }
 
-                    // Show quality selection menu
+                    // Show menu immediately with "loading..." sizes
                     var qualityItems = qualities.map(function(q) {
-                        return { title: q.label, url: q.url };
+                        return { title: q.label, subtitle: 'Loading size...', url: q.url, sizeLoaded: false };
                     });
 
                     Lampa.Select.show({
@@ -396,13 +609,31 @@
                         items: qualityItems,
                         onSelect: function(selected) {
                             Lampa.Select.close();
-                            // Show action menu for selected quality
                             showQualityActions(selected.url, selected.title, title);
                         },
                         onBack: function() {
-                            showMenu(); // Go back to main menu
+                            showMenu();
                         }
                     });
+
+                    // Fetch file sizes in background and update menu
+                    qualities.forEach(function(q, idx) {
+                        getFileSize(q.url, function(size) {
+                            qualityItems[idx].subtitle = size ? formatBytes(size) : 'HLS stream';
+                            qualityItems[idx].sizeLoaded = true;
+                            // Re-render if select is still open
+                            try {
+                                var items = document.querySelectorAll('.selectbox-item');
+                                if (items[idx]) {
+                                    var sub = items[idx].querySelector('.selectbox-item__subtitle');
+                                    if (sub) sub.textContent = qualityItems[idx].subtitle;
+                                }
+                            } catch(e) {}
+                        });
+                    });
+                } else if (item.id === 'batch') {
+                    // Show batch download options
+                    showBatchDownload();
                 } else if (item.id === 'external') {
                     try {
                         // Copy title to clipboard for manual paste
@@ -504,7 +735,16 @@
         // Hook into video source selection
         Lampa.Listener.follow('video', function (e) {
             console.log('[DLHelper] Video event:', e.type, e.data ? Object.keys(e.data) : 'no data');
-            if (e.data) captureQualities(e.data);
+            if (e.data) {
+                captureQualities(e.data);
+                captureEpisodes(e.data);
+            }
+        });
+
+        // Hook into online sources to capture episode list
+        Lampa.Listener.follow('online', function(e) {
+            console.log('[DLHelper] Online event:', e.type, e.data ? Object.keys(e.data) : 'no data');
+            if (e.data) captureEpisodes(e.data);
         });
 
     }
