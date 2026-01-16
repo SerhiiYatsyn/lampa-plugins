@@ -862,6 +862,7 @@
                         if (item.file) { foundUrl = item.file; debugInfo.push('-> file found!'); }
                         if (item.link) { foundUrl = item.link; debugInfo.push('-> link found!'); }
                         if (item.stream) { foundUrl = item.stream; debugInfo.push('-> stream found!'); }
+                        if (item.copylink) { foundUrl = item.copylink; debugInfo.push('-> copylink found!'); }
 
                         var itemTitle = (item.title || '').toLowerCase();
                         if (itemTitle.indexOf('плеер') > -1 || itemTitle.indexOf('player') > -1) {
