@@ -820,54 +820,36 @@
         var originalSelectShow = Lampa.Select.show;
 
         Lampa.Select.show = function(params) {
-            // DEBUG: Show all menu titles and first item
-            if (params && params.items && params.items.length > 0) {
-                var menuInfo = 'MENU: "' + (params.title || 'no title') + '" items: ';
-                menuInfo += params.items.slice(0, 3).map(function(i) { return i.title; }).join(', ');
-                console.log('[DLHelper] ' + menuInfo);
-
-                // Show notification with menu info for debugging
-                Lampa.Noty.show('[DEBUG] ' + (params.title || 'Menu') + ': ' + params.items[0].title, { time: 3000 });
-            }
-
             if (params && params.items && Array.isArray(params.items) && !params._dlHelperProcessed) {
                 params._dlHelperProcessed = true;
 
-                // Check if this is the player action menu ("Действие" / player selection)
-                var isPlayerMenu = params.items.some(function(item) {
-                    var title = (item.title || '').toLowerCase();
-                    return title.indexOf('плеер') > -1 ||
-                           title.indexOf('player') > -1 ||
-                           title.indexOf('android') > -1 ||
-                           title.indexOf('lampa') > -1 ||
-                           title.indexOf('действие') > -1 ||
-                           title.indexOf('запустить') > -1;
-                });
-
-                // Also check menu title
+                // Check if this is the "Действие" menu (player action menu)
                 var menuTitle = (params.title || '').toLowerCase();
-                if (menuTitle.indexOf('действие') > -1 || menuTitle.indexOf('action') > -1) {
-                    isPlayerMenu = true;
-                }
+                var isActionMenu = menuTitle.indexOf('действие') > -1 ||
+                                   menuTitle.indexOf('action') > -1 ||
+                                   menuTitle === 'действие';
 
-                if (isPlayerMenu) {
+                if (isActionMenu) {
                     // This is the player selection menu - add download option
                     var streamUrl = params.url || lastStreamUrl;
-                    var streamTitle = params.title || lastStreamTitle || 'video';
+                    var streamTitle = lastStreamTitle || 'video';
 
-                    if (streamUrl) {
-                        params.items.push({
-                            title: '⬇️ Download',
-                            subtitle: 'Save to device',
-                            onSelect: function() {
-                                Lampa.Select.close();
+                    // Add Download option
+                    params.items.push({
+                        title: '⬇️ Download',
+                        subtitle: streamUrl ? 'Save to device' : 'No URL captured',
+                        onSelect: function() {
+                            Lampa.Select.close();
+                            if (streamUrl) {
                                 showDownloadMenu(streamUrl, streamTitle);
+                            } else {
+                                Lampa.Noty.show('URL not found. Try playing first.');
                             }
-                        });
-                    }
+                        }
+                    });
                 }
 
-                // Store URL for later
+                // Store URL for later use
                 if (params.url) {
                     lastStreamUrl = params.url;
                     lastStreamTitle = params.title || 'video';
