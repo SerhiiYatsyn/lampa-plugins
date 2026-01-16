@@ -388,60 +388,53 @@
     }
 
     // ========== 1DM INTENT DOWNLOAD ==========
-    // Uses intent:// URL scheme to directly open 1DM with filename
     function open1DMDownload(url, filename, headers) {
-        // 1DM intent URL format:
-        // intent:{url}#Intent;package={pkg};scheme=idmdownload;S.title={name};end
-        const packages = [
-            'idm.internet.download.manager.plus',  // 1DM+
-            'idm.internet.download.manager',       // 1DM
-            'idm.internet.download.manager.adm.lite' // 1DM Lite
-        ];
+        // Method 1: Try idmdownload:// URL scheme
+        const schemeUrl = 'idmdownload:' + url;
 
-        // Build intent URL with extras
-        let intentUrl = 'intent:' + url + '#Intent;';
-        intentUrl += 'action=android.intent.action.VIEW;';
-        intentUrl += 'scheme=idmdownload;';
-        intentUrl += 'package=' + packages[0] + ';'; // Try 1DM+ first
-        intentUrl += 'S.extra_filename=' + encodeURIComponent(filename) + ';';
-
-        // Add headers if present
-        if (headers) {
-            if (headers['Referer']) {
-                intentUrl += 'S.extra_referer=' + encodeURIComponent(headers['Referer']) + ';';
-            }
-            if (headers['User-Agent']) {
-                intentUrl += 'S.extra_useragent=' + encodeURIComponent(headers['User-Agent']) + ';';
-            }
-            if (headers['Cookie']) {
-                intentUrl += 'S.extra_cookies=' + encodeURIComponent(headers['Cookie']) + ';';
-            }
-        }
-
-        intentUrl += 'end';
-
-        // Try to open via Lampa.Android.openBrowser (uses ACTION_VIEW)
         if (Lampa.Android?.openBrowser) {
             try {
-                Lampa.Android.openBrowser(intentUrl);
-                Lampa.Noty.show('Opening 1DM...');
+                Lampa.Android.openBrowser(schemeUrl);
+                // Copy filename for manual paste in 1DM
+                copyToClipboard(filename);
+                Lampa.Noty.show('Filename copied! Paste in 1DM');
                 return true;
             } catch (e) {
-                console.log('1DM intent failed:', e);
+                console.log('1DM scheme failed:', e);
             }
         }
 
-        // Fallback: try location.href
-        try {
-            window.location.href = intentUrl;
-            return true;
-        } catch (e) {
-            console.log('Intent URL failed:', e);
+        // Method 2: Try Android global share if available
+        if (typeof Android !== 'undefined' && Android.share) {
+            try {
+                const shareText = url + '\n\nFilename: ' + filename;
+                Android.share(shareText);
+                Lampa.Noty.show('Share to 1DM');
+                return true;
+            } catch (e) {
+                console.log('Android.share failed:', e);
+            }
         }
 
-        // Final fallback: copy
-        copyToClipboard(url);
-        Lampa.Noty.show('Install 1DM+ app. URL copied!');
+        // Method 3: Web Share API
+        if (navigator.share) {
+            navigator.share({
+                title: filename,
+                text: 'Filename: ' + filename,
+                url: url
+            }).then(() => {
+                Lampa.Noty.show('Share to 1DM');
+            }).catch(() => {});
+            return true;
+        }
+
+        // Fallback: Copy all info
+        let allInfo = 'URL: ' + url + '\n\nFilename: ' + filename;
+        if (headers) {
+            allInfo += '\n\nHeaders:\n' + formatHeadersForCopy(headers);
+        }
+        copyToClipboard(allInfo);
+        Lampa.Noty.show('All info copied! Open 1DM manually');
         return false;
     }
 
