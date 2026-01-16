@@ -59,7 +59,7 @@
     }
 
     // ========== DOWNLOAD MENU ==========
-    function showDownloadMenu(url, quality) {
+    function showDownloadMenu(url, quality, fromPlayer) {
         if (!url || typeof url !== 'string') {
             Lampa.Noty.show('ERROR: URL is ' + (typeof url));
             return;
@@ -72,6 +72,9 @@
 
         var androidAvailable = Lampa.Android && Lampa.Android.openPlayer;
         var filename = getFilename(quality);
+
+        // Determine where to return on back
+        var returnTo = fromPlayer ? 'player' : 'content';
 
         var items = [];
 
@@ -109,22 +112,28 @@
                                 Lampa.Noty.show('Copied!');
                             }
                             Lampa.Select.close();
+                            Lampa.Controller.toggle(returnTo);
                         },
-                        onBack: function() { Lampa.Controller.toggle('content'); }
+                        onBack: function() { Lampa.Controller.toggle(returnTo); },
+                        _dlDone: true
                     });
                 } else if (item.id === 'download') {
                     var dlUrl = url + '#filename=' + encodeURIComponent(filename + '.mp4');
                     Lampa.Android.openPlayer(dlUrl, JSON.stringify({ title: filename }));
                     Lampa.Noty.show('Opening: ' + filename);
+                    Lampa.Controller.toggle(returnTo);
                 } else if (item.id === 'external') {
                     Lampa.Android.openPlayer(url, JSON.stringify({ title: filename }));
                     Lampa.Noty.show('Opening player...');
+                    Lampa.Controller.toggle(returnTo);
                 } else if (item.id === 'copy') {
                     copyToClipboard(url);
                     Lampa.Noty.show('URL copied!');
+                    Lampa.Controller.toggle(returnTo);
                 }
             },
-            onBack: function() { Lampa.Controller.toggle('content'); }
+            onBack: function() { Lampa.Controller.toggle(returnTo); },
+            _dlDone: true
         });
     }
 
@@ -151,7 +160,7 @@
             Lampa.Noty.show('No URL. Start playing first!');
             return;
         }
-        showDownloadMenu(url, '');
+        showDownloadMenu(url, '', true);
     }
 
     function addPlayerButton() {
