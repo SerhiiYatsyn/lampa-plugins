@@ -173,6 +173,46 @@
         } catch (_) { return []; }
     }
 
+    // ========== GET HEADERS FROM PLAYDATA ==========
+    function getHeaders() {
+        try {
+            const pd = Lampa.Player.playdata();
+            const headers = {};
+
+            // Check various header sources
+            if (pd?.headers && typeof pd.headers === 'object') {
+                Object.assign(headers, pd.headers);
+            }
+
+            if (pd?.header && typeof pd.header === 'object') {
+                Object.assign(headers, pd.header);
+            }
+
+            // Individual header fields
+            if (pd?.referer) headers['Referer'] = pd.referer;
+            if (pd?.referrer) headers['Referer'] = pd.referrer;
+            if (pd?.useragent) headers['User-Agent'] = pd.useragent;
+            if (pd?.user_agent) headers['User-Agent'] = pd.user_agent;
+            if (pd?.cookie) headers['Cookie'] = pd.cookie;
+            if (pd?.cookies) headers['Cookie'] = pd.cookies;
+
+            // Check for origin
+            if (pd?.origin) headers['Origin'] = pd.origin;
+
+            return Object.keys(headers).length > 0 ? headers : null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    // Format headers for display/copy
+    function formatHeadersForCopy(headers) {
+        if (!headers) return '';
+        return Object.entries(headers)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join('\n');
+    }
+
     // ========== EXTRACT DIRECT URL FROM PROXY ==========
     function extractDirectUrl(url) {
         if (!url) return null;
@@ -347,6 +387,64 @@
         return false;
     }
 
+    // ========== 1DM INTENT DOWNLOAD ==========
+    // Uses intent:// URL scheme to directly open 1DM with filename
+    function open1DMDownload(url, filename, headers) {
+        // 1DM intent URL format:
+        // intent:{url}#Intent;package={pkg};scheme=idmdownload;S.title={name};end
+        const packages = [
+            'idm.internet.download.manager.plus',  // 1DM+
+            'idm.internet.download.manager',       // 1DM
+            'idm.internet.download.manager.adm.lite' // 1DM Lite
+        ];
+
+        // Build intent URL with extras
+        let intentUrl = 'intent:' + url + '#Intent;';
+        intentUrl += 'action=android.intent.action.VIEW;';
+        intentUrl += 'scheme=idmdownload;';
+        intentUrl += 'package=' + packages[0] + ';'; // Try 1DM+ first
+        intentUrl += 'S.extra_filename=' + encodeURIComponent(filename) + ';';
+
+        // Add headers if present
+        if (headers) {
+            if (headers['Referer']) {
+                intentUrl += 'S.extra_referer=' + encodeURIComponent(headers['Referer']) + ';';
+            }
+            if (headers['User-Agent']) {
+                intentUrl += 'S.extra_useragent=' + encodeURIComponent(headers['User-Agent']) + ';';
+            }
+            if (headers['Cookie']) {
+                intentUrl += 'S.extra_cookies=' + encodeURIComponent(headers['Cookie']) + ';';
+            }
+        }
+
+        intentUrl += 'end';
+
+        // Try to open via Lampa.Android.openBrowser (uses ACTION_VIEW)
+        if (Lampa.Android?.openBrowser) {
+            try {
+                Lampa.Android.openBrowser(intentUrl);
+                Lampa.Noty.show('Opening 1DM...');
+                return true;
+            } catch (e) {
+                console.log('1DM intent failed:', e);
+            }
+        }
+
+        // Fallback: try location.href
+        try {
+            window.location.href = intentUrl;
+            return true;
+        } catch (e) {
+            console.log('Intent URL failed:', e);
+        }
+
+        // Final fallback: copy
+        copyToClipboard(url);
+        Lampa.Noty.show('Install 1DM+ app. URL copied!');
+        return false;
+    }
+
     // ========== GET FILE SIZE (with cache) ==========
     function getFileSize(url, callback) {
         if (sizeCache[url] !== undefined) {
@@ -382,6 +480,7 @@
         const sizeText = fileSize ? ' (' + formatBytes(fileSize) + ')' : '';
         const subtitles = getSubtitles();
         const isHls = url.includes('.m3u8');
+        const headers = getHeaders();
 
         const items = [];
 
@@ -392,9 +491,19 @@
                 // HLS options - direct URL extraction
                 const directUrl = extractDirectUrl(url) || url;
 
+                // Primary option - automated 1DM download with filename
+                items.push({ title: '⬇️ 1DM Download', subtitle: filename + '.mp4', id: 'download1dm', directUrl, headers });
                 items.push({ title: '📤 Share → 1DM', subtitle: 'Open in 1DM Browser', id: 'share1dm', directUrl });
-                items.push({ title: 'Copy URL', subtitle: 'For 1DM Smart Download', id: 'copyurl', directUrl });
+                items.push({ title: 'Copy URL', subtitle: 'For manual download', id: 'copyurl', directUrl });
                 items.push({ title: 'Copy Filename', subtitle: filename + '.mp4', id: 'copyname' });
+
+                // Show headers option if headers exist
+                if (headers) {
+                    const headerKeys = Object.keys(headers).join(', ');
+                    items.push({ title: '🔑 Copy Headers', subtitle: headerKeys, id: 'copyheaders', headers });
+                }
+
+                items.push({ title: 'Copy ALL', subtitle: 'URL + Filename + Headers', id: 'copyall', directUrl, headers });
                 items.push({ title: 'External Player', subtitle: 'MX Player, VLC', id: 'external' });
             } else {
                 // Direct MP4 options
@@ -412,6 +521,9 @@
                 Lampa.Select.close();
                 if (item.id === 'download') {
                     doDownload(url, filename, subtitles);
+                } else if (item.id === 'download1dm') {
+                    const dlUrl = item.directUrl || url;
+                    open1DMDownload(dlUrl, filename + '.mp4', item.headers);
                 } else if (item.id === 'share1dm') {
                     const dlUrl = item.directUrl || url;
                     shareToApp(dlUrl, filename + '.mp4');
@@ -437,6 +549,18 @@
                 } else if (item.id === 'copy') {
                     copyToClipboard(url);
                     Lampa.Noty.show('URL copied!');
+                } else if (item.id === 'copyheaders') {
+                    const headersText = formatHeadersForCopy(item.headers);
+                    copyToClipboard(headersText);
+                    Lampa.Noty.show('Headers copied!');
+                } else if (item.id === 'copyall') {
+                    const dlUrl = item.directUrl || url;
+                    let allText = 'URL: ' + dlUrl + '\n\nFilename: ' + filename + '.mp4';
+                    if (item.headers) {
+                        allText += '\n\nHeaders:\n' + formatHeadersForCopy(item.headers);
+                    }
+                    copyToClipboard(allText);
+                    Lampa.Noty.show('All info copied!');
                 }
                 Lampa.Controller.toggle(returnTo);
             },
