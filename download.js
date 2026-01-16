@@ -311,11 +311,15 @@
         if (androidAvailable) {
             const subText = subtitles.length > 0 ? ` + ${subtitles.length} sub` : '';
 
+            // Share to Seal/other apps (works for both MP4 and HLS)
+            if (Lampa.Android?.share) {
+                items.push({ title: 'Share to Seal / 1DM', subtitle: 'Рекомендовано', id: 'share' });
+            }
+
             if (isHls) {
                 // HLS options
                 items.push({ title: 'ADM / 1DM (HLS)', subtitle: 'Може не працювати', id: 'download' });
                 items.push({ title: 'External Player', subtitle: 'VLC, MX Player', id: 'external' });
-                items.push({ title: 'Copy yt-dlp command', subtitle: 'Для Termux / Seal', id: 'ytdlp' });
 
                 // Check if URL is proxied and offer direct URL
                 const directUrl = extractDirectUrl(url);
@@ -324,7 +328,7 @@
                 }
             } else {
                 // Direct MP4 options
-                items.push({ title: 'Download', subtitle: filename + '.mp4' + sizeText + subText, id: 'download' });
+                items.push({ title: 'Download (ADM)', subtitle: filename + '.mp4' + sizeText + subText, id: 'download' });
                 items.push({ title: 'External Player', subtitle: 'VLC, MX Player', id: 'external' });
             }
         }
@@ -336,13 +340,13 @@
             items,
             onSelect: function(item) {
                 Lampa.Select.close();
-                if (item.id === 'download') {
+                if (item.id === 'share') {
+                    Lampa.Android.share(url);
+                    Lampa.Noty.show('Оберіть Seal або 1DM');
+                } else if (item.id === 'download') {
                     doDownload(url, filename, subtitles);
                 } else if (item.id === 'external') {
                     doExternal(url, filename);
-                } else if (item.id === 'ytdlp') {
-                    copyToClipboard(`yt-dlp "${url}" -o "${filename}.mp4"`);
-                    Lampa.Noty.show('yt-dlp command copied!');
                 } else if (item.id === 'direct') {
                     copyToClipboard(item.directUrl);
                     Lampa.Noty.show('Direct URL copied!');
