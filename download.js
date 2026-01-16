@@ -820,6 +820,16 @@
         var originalSelectShow = Lampa.Select.show;
 
         Lampa.Select.show = function(params) {
+            // DEBUG: Show all menu titles and first item
+            if (params && params.items && params.items.length > 0) {
+                var menuInfo = 'MENU: "' + (params.title || 'no title') + '" items: ';
+                menuInfo += params.items.slice(0, 3).map(function(i) { return i.title; }).join(', ');
+                console.log('[DLHelper] ' + menuInfo);
+
+                // Show notification with menu info for debugging
+                Lampa.Noty.show('[DEBUG] ' + (params.title || 'Menu') + ': ' + params.items[0].title, { time: 3000 });
+            }
+
             if (params && params.items && Array.isArray(params.items) && !params._dlHelperProcessed) {
                 params._dlHelperProcessed = true;
 
@@ -829,12 +839,19 @@
                     return title.indexOf('плеер') > -1 ||
                            title.indexOf('player') > -1 ||
                            title.indexOf('android') > -1 ||
-                           title.indexOf('lampa') > -1;
+                           title.indexOf('lampa') > -1 ||
+                           title.indexOf('действие') > -1 ||
+                           title.indexOf('запустить') > -1;
                 });
+
+                // Also check menu title
+                var menuTitle = (params.title || '').toLowerCase();
+                if (menuTitle.indexOf('действие') > -1 || menuTitle.indexOf('action') > -1) {
+                    isPlayerMenu = true;
+                }
 
                 if (isPlayerMenu) {
                     // This is the player selection menu - add download option
-                    // Get URL from params or stored value
                     var streamUrl = params.url || lastStreamUrl;
                     var streamTitle = params.title || lastStreamTitle || 'video';
 
@@ -850,7 +867,7 @@
                     }
                 }
 
-                // Also check if params has URL directly (store it for later)
+                // Store URL for later
                 if (params.url) {
                     lastStreamUrl = params.url;
                     lastStreamTitle = params.title || 'video';
