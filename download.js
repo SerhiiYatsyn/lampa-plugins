@@ -154,34 +154,53 @@
     }
 
     function showPlayerMenu() {
-        // First check if we have captured URLs with multiple qualities
-        if (capturedUrls.length > 1) {
-            var items = capturedUrls.map(function(u) {
-                return { title: u.label || u.quality || 'Video', url: u.url };
-            });
+        // Get current playing URL first
+        var currentUrl = getVideoUrl();
 
-            Lampa.Select.show({
-                title: 'Вибери якість',
-                items: items,
-                onSelect: function(sel) {
-                    Lampa.Select.close();
-                    showDownloadMenu(sel.url, sel.title, true);
-                },
-                onBack: function() { Lampa.Controller.toggle('player'); },
-                _dlHelper: true
+        // Build list of available URLs
+        var availableUrls = [];
+
+        // Add captured URLs if any
+        if (capturedUrls.length > 0) {
+            capturedUrls.forEach(function(u) {
+                availableUrls.push({
+                    title: u.label || u.quality || 'Captured',
+                    url: u.url
+                });
             });
-            return;
         }
 
-        // Single URL from capturedUrls or get current playing URL
-        var url = (capturedUrls.length === 1) ? capturedUrls[0].url : getVideoUrl();
-        var quality = (capturedUrls.length === 1) ? (capturedUrls[0].quality || capturedUrls[0].label || '') : '';
+        // Add current playing URL if different from captured
+        if (currentUrl) {
+            var alreadyHas = availableUrls.some(function(u) { return u.url === currentUrl; });
+            if (!alreadyHas) {
+                availableUrls.unshift({ title: 'Current', url: currentUrl });
+            }
+        }
 
-        if (!url) {
+        // No URLs at all
+        if (availableUrls.length === 0) {
             Lampa.Noty.show('No URL. Start playing first!');
             return;
         }
-        showDownloadMenu(url, quality, true);
+
+        // Single URL - go directly to download menu
+        if (availableUrls.length === 1) {
+            showDownloadMenu(availableUrls[0].url, availableUrls[0].title, true);
+            return;
+        }
+
+        // Multiple URLs - show quality selector
+        Lampa.Select.show({
+            title: 'Вибери якість',
+            items: availableUrls,
+            onSelect: function(sel) {
+                Lampa.Select.close();
+                showDownloadMenu(sel.url, sel.title, true);
+            },
+            onBack: function() { Lampa.Controller.toggle('player'); },
+            _dlHelper: true
+        });
     }
 
     function addPlayerButton() {
