@@ -82,7 +82,9 @@
         var items = [];
 
         if (androidAvailable) {
-            items.push({ title: 'Open with External App', subtitle: 'Seal, YTDLnis, VLC...', id: 'external' });
+            items.push({ title: 'Open with External App', subtitle: 'YTDLnis, Seal, VLC...', id: 'external' });
+            items.push({ title: 'Download with 1DM', subtitle: 'With filename (if installed)', id: '1dm' });
+            items.push({ title: 'Download with DVGet', subtitle: 'With filename (if installed)', id: 'dvget' });
         }
 
         items.push({ title: 'Copy URL', subtitle: 'Paste in download app', id: 'copy' });
@@ -95,9 +97,11 @@
 
                 if (item.id === 'external') {
                     try {
+                        // Copy title to clipboard for manual paste
+                        copyToClipboard(title);
                         var opened = openExternal(url, title);
                         if (opened) {
-                            Lampa.Noty.show('Choose Seal or YTDLnis');
+                            Lampa.Noty.show('"' + title.substring(0, 20) + '" copied! Paste as filename');
                         } else {
                             copyToClipboard(url);
                             Lampa.Noty.show('No method found. URL copied!');
@@ -105,6 +109,28 @@
                     } catch (e) {
                         copyToClipboard(url);
                         Lampa.Noty.show('Error: ' + e.message + '. URL copied!');
+                    }
+                } else if (item.id === '1dm') {
+                    try {
+                        // 1DM supports #filename= fragment for custom filename
+                        var safeTitle = title.replace(/[<>:"/\\|?*]/g, '_');
+                        var urlWith1DM = url + '#filename=' + encodeURIComponent(safeTitle + '.mp4');
+                        Lampa.Android.openPlayer(urlWith1DM, JSON.stringify({ title: title }));
+                        Lampa.Noty.show('Opening in 1DM...');
+                    } catch (e) {
+                        copyToClipboard(url);
+                        Lampa.Noty.show('Error: ' + e.message);
+                    }
+                } else if (item.id === 'dvget') {
+                    try {
+                        // DVGet supports #filename= fragment like 1DM
+                        var safeTitle = title.replace(/[<>:"/\\|?*]/g, '_');
+                        var urlWithDV = url + '#filename=' + encodeURIComponent(safeTitle + '.mp4');
+                        Lampa.Android.openPlayer(urlWithDV, JSON.stringify({ title: title }));
+                        Lampa.Noty.show('Opening in DVGet...');
+                    } catch (e) {
+                        copyToClipboard(url);
+                        Lampa.Noty.show('Error: ' + e.message);
                     }
                 } else {
                     copyToClipboard(url);
