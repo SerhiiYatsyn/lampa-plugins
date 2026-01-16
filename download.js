@@ -26,37 +26,30 @@
 
     // ========== STORAGE ==========
     let savedCard = null;
-    const downloadQueue = [];
     const sizeCache = {};
 
     // ========== FILENAME GENERATOR ==========
     function normalizeQuality(quality) {
         if (!quality) return null;
-        // Convert "1920x1080" → "1080p", "1280x720" → "720p", etc.
+        // Convert "1920x1080" → "1080p", "1280x720" → "720p"
         const resMatch = quality.match(/(\d+)x(\d+)/);
-        if (resMatch) {
-            return resMatch[2] + 'p';
-        }
-        // Already in good format like "1080p" or "720p"
-        if (/^\d{3,4}p$/i.test(quality)) {
-            return quality.toLowerCase();
-        }
+        if (resMatch) return resMatch[2] + 'p';
+        // Already "1080p" or "720p"
+        if (/^\d{3,4}p$/i.test(quality)) return quality.toLowerCase();
         // "1080" → "1080p"
-        if (/^\d{3,4}$/.test(quality)) {
-            return quality + 'p';
-        }
+        if (/^\d{3,4}$/.test(quality)) return quality + 'p';
         return quality;
     }
 
-    function getFilename(quality, customCard, customEpisode) {
+    function getFilename(quality) {
         const parts = [];
-        const card = customCard || savedCard || getActiveCard();
+        const card = savedCard || getActiveCard();
 
         if (card) {
             parts.push(card.title || card.name || '');
         }
 
-        const episode = customEpisode || getEpisodeInfo();
+        const episode = getEpisodeInfo();
         if (episode) {
             parts.push(episode.code);
             if (episode.title && episode.title !== card?.title) {
@@ -67,27 +60,23 @@
         const normalizedQuality = normalizeQuality(quality);
         if (normalizedQuality) parts.push(normalizedQuality);
 
-        const filename = parts
+        return parts
             .filter(p => p && p.length > 0)
             .join(' - ')
             .replace(/[<>:"/\\|?*]/g, '')
-            .trim();
-
-        return filename || 'video';
+            .trim() || 'video';
     }
 
     function getActiveCard() {
         try {
-            const a = Lampa.Activity.active();
-            return a?.card || null;
+            return Lampa.Activity.active()?.card || null;
         } catch (_) { return null; }
     }
 
     function getEpisodeInfo() {
-        // Try multiple sources for episode info
         let season, episode, title;
 
-        // Source 1: Lampa.Player.playdata()
+        // Source 1: playdata
         try {
             const pd = Lampa.Player.playdata();
             if (pd) {
@@ -97,46 +86,27 @@
             }
         } catch (_) { /* ignore */ }
 
-        // Source 2: Activity data
+        // Source 2: Activity for TV shows
         if (!season && !episode) {
             try {
                 const a = Lampa.Activity.active();
-                if (a?.component === 'full' && a?.card) {
-                    // For TV shows, check if we're watching an episode
-                    const card = a.card;
-                    if (card.number_of_seasons || card.seasons) {
-                        // This is a TV show, try to get current episode from player
-                        const pd = Lampa.Player.playdata();
-                        season = pd?.season ?? pd?.s ?? 1;
-                        episode = pd?.episode ?? pd?.e ?? pd?.seria ?? 1;
-                        title = pd?.title ?? pd?.episode_title;
-                    }
+                if (a?.card?.number_of_seasons || a?.card?.seasons) {
+                    const pd = Lampa.Player.playdata();
+                    season = pd?.season ?? pd?.s ?? 1;
+                    episode = pd?.episode ?? pd?.e ?? pd?.seria ?? 1;
+                    title = pd?.title ?? pd?.episode_title;
                 }
             } catch (_) { /* ignore */ }
         }
 
-        // Source 3: Try Lampa.PlayerVideo or Lampa.PlayerPlaylist
-        if (!season && !episode) {
-            try {
-                const video = Lampa.PlayerVideo?.video?.() || Lampa.Player?.video?.();
-                if (video?.season || video?.episode) {
-                    season = video.season;
-                    episode = video.episode;
-                    title = video.title;
-                }
-            } catch (_) { /* ignore */ }
-        }
-
-        // Source 4: Check URL for episode patterns like S01E05
+        // Source 3: URL pattern S01E05
         if (!season && !episode) {
             try {
                 const url = getCurrentUrl();
-                if (url) {
-                    const match = url.match(/[sS](\d{1,2})[eE](\d{1,2})/);
-                    if (match) {
-                        season = parseInt(match[1], 10);
-                        episode = parseInt(match[2], 10);
-                    }
+                const match = url?.match(/[sS](\d{1,2})[eE](\d{1,2})/);
+                if (match) {
+                    season = parseInt(match[1], 10);
+                    episode = parseInt(match[2], 10);
                 }
             } catch (_) { /* ignore */ }
         }
@@ -144,12 +114,9 @@
         if (season || episode) {
             return {
                 code: 'S' + String(season || 1).padStart(2, '0') + 'E' + String(episode || 1).padStart(2, '0'),
-                title: title || null,
-                season: season || 1,
-                episode: episode || 1
+                title: title || null
             };
         }
-
         return null;
     }
 
@@ -157,16 +124,12 @@
     function getCurrentUrl() {
         try {
             const pd = Lampa.Player.playdata();
-            if (pd?.url && typeof pd.url === 'string' && pd.url.startsWith('http')) {
-                return pd.url;
-            }
+            if (pd?.url?.startsWith?.('http')) return pd.url;
         } catch (_) { /* ignore */ }
 
         try {
             const v = document.querySelector('video');
-            if (v?.src?.startsWith('http')) {
-                return v.src;
-            }
+            if (v?.src?.startsWith?.('http')) return v.src;
         } catch (_) { /* ignore */ }
 
         return null;
@@ -178,33 +141,32 @@
             const pd = Lampa.Player.playdata();
             const subs = [];
 
-            // Check subtitles array
             if (Array.isArray(pd?.subtitles)) {
-                pd.subtitles.forEach((sub, i) => {
-                    if (sub?.url?.startsWith('http')) {
+                for (const sub of pd.subtitles) {
+                    if (sub?.url?.startsWith?.('http')) {
                         subs.push({
                             url: sub.url,
-                            label: sub.label || sub.language || `Subtitle ${i + 1}`,
+                            label: sub.label || sub.language || 'Subtitle',
                             lang: sub.language || sub.lang || ''
                         });
                     }
-                });
+                }
             }
 
-            // Check subtitle object
             if (pd?.subtitle && typeof pd.subtitle === 'object') {
-                Object.entries(pd.subtitle).forEach(([key, val]) => {
+                for (const [key, val] of Object.entries(pd.subtitle)) {
                     if (typeof val === 'string' && val.startsWith('http')) {
                         subs.push({ url: val, label: key, lang: key });
                     }
-                });
+                }
             }
 
-            // Check tracks
             if (Array.isArray(pd?.tracks)) {
-                pd.tracks.filter(t => t?.kind === 'subtitles' && t?.url?.startsWith('http')).forEach(t => {
-                    subs.push({ url: t.url, label: t.label || t.language || 'Subtitle', lang: t.language || '' });
-                });
+                for (const t of pd.tracks) {
+                    if (t?.kind === 'subtitles' && t?.url?.startsWith?.('http')) {
+                        subs.push({ url: t.url, label: t.label || 'Subtitle', lang: t.language || '' });
+                    }
+                }
             }
 
             return subs;
@@ -214,11 +176,7 @@
     // ========== EXTRACT QUALITY FROM URL ==========
     function extractQualityFromUrl(url) {
         if (!url) return null;
-        const patterns = [
-            /[_/\-](\d{3,4}p)[_/.]/i,
-            /quality[=_]?(\d{3,4})/i,
-            /[_/\-](\d{3,4})[_/.]/
-        ];
+        const patterns = [/[_/.-](\d{3,4}p)[_/.-]/i, /quality[=_]?(\d{3,4})/i];
         for (const pattern of patterns) {
             const match = url.match(pattern);
             if (match) {
@@ -261,19 +219,29 @@
     }
 
     // ========== DOWNLOAD ACTIONS ==========
-    function doDownload(url, filename) {
+    function doDownload(url, filename, subtitles) {
         const ext = url.includes('.m3u8') ? '.m3u8' : '.mp4';
         const dlUrl = url + '#filename=' + encodeURIComponent(filename + ext);
         Lampa.Android.openPlayer(dlUrl, JSON.stringify({ title: filename }));
-        Lampa.Noty.show('Downloading: ' + filename);
-    }
 
-    function doDownloadSubtitle(url, label) {
-        const filename = getFilename(null) + ' - ' + label;
-        const ext = url.includes('.srt') ? '.srt' : url.includes('.ass') ? '.ass' : '.vtt';
-        const dlUrl = url + '#filename=' + encodeURIComponent(filename + ext);
-        Lampa.Android.openPlayer(dlUrl, JSON.stringify({ title: filename }));
-        Lampa.Noty.show('Downloading: ' + filename + ext);
+        // Download subtitles too (with delay)
+        if (subtitles?.length) {
+            let count = 0;
+            subtitles.forEach((sub, i) => {
+                setTimeout(() => {
+                    let subExt = '.vtt';
+                    if (sub.url.includes('.srt')) subExt = '.srt';
+                    else if (sub.url.includes('.ass')) subExt = '.ass';
+                    const subFilename = filename + ' - ' + sub.label + subExt;
+                    const subUrl = sub.url + '#filename=' + encodeURIComponent(subFilename);
+                    Lampa.Android.openPlayer(subUrl, JSON.stringify({ title: subFilename }));
+                    count++;
+                }, (i + 1) * 500);
+            });
+            Lampa.Noty.show(`Downloading: ${filename} + ${subtitles.length} sub`);
+        } else {
+            Lampa.Noty.show('Downloading: ' + filename);
+        }
     }
 
     function doExternal(url, filename) {
@@ -303,137 +271,9 @@
         xhr.send();
     }
 
-    // ========== DOWNLOAD QUEUE ==========
-    function addToQueue(url, quality, size) {
-        const card = savedCard || getActiveCard();
-        const episode = getEpisodeInfo();
-        const filename = getFilename(quality, card, episode);
-
-        const item = {
-            url,
-            quality,
-            size,
-            filename,
-            card: card ? { title: card.title || card.name } : null,
-            episode: episode ? { ...episode } : null,
-            addedAt: Date.now()
-        };
-
-        // Check for duplicates
-        const exists = downloadQueue.some(q => q.url === url);
-        if (exists) {
-            Lampa.Noty.show('Already in queue');
-            return false;
-        }
-
-        downloadQueue.push(item);
-        Lampa.Noty.show(`Added to queue (${downloadQueue.length}): ${filename}`);
-        return true;
-    }
-
-    function showQueueMenu(returnTo) {
-        if (downloadQueue.length === 0) {
-            Lampa.Noty.show('Queue is empty');
-            return;
-        }
-
-        const items = downloadQueue.map((q, i) => ({
-            title: q.filename,
-            subtitle: q.size ? formatBytes(q.size) : q.quality,
-            index: i
-        }));
-
-        items.push({ title: '--- Actions ---', subtitle: '', index: -1 });
-        items.push({ title: 'Download All (' + downloadQueue.length + ')', subtitle: 'Send to ADM', index: -2 });
-        items.push({ title: 'Clear Queue', subtitle: '', index: -3 });
-
-        Lampa.Select.show({
-            title: 'Download Queue (' + downloadQueue.length + ')',
-            items,
-            onSelect: function(item) {
-                Lampa.Select.close();
-
-                if (item.index === -1) {
-                    // Separator, reshow menu
-                    setTimeout(() => showQueueMenu(returnTo), 100);
-                } else if (item.index === -2) {
-                    // Download all
-                    downloadAllFromQueue();
-                    Lampa.Controller.toggle(returnTo);
-                } else if (item.index === -3) {
-                    // Clear queue
-                    downloadQueue.length = 0;
-                    Lampa.Noty.show('Queue cleared');
-                    Lampa.Controller.toggle(returnTo);
-                } else {
-                    // Show item options
-                    showQueueItemMenu(item.index, returnTo);
-                }
-            },
-            onBack: () => Lampa.Controller.toggle(returnTo),
-            _dlHelper: true
-        });
-    }
-
-    function showQueueItemMenu(index, returnTo) {
-        const item = downloadQueue[index];
-        if (!item) return;
-
-        Lampa.Select.show({
-            title: item.filename,
-            items: [
-                { title: 'Download Now', id: 'download' },
-                { title: 'Remove from Queue', id: 'remove' },
-                { title: 'Back to Queue', id: 'back' }
-            ],
-            onSelect: function(sel) {
-                Lampa.Select.close();
-                if (sel.id === 'download') {
-                    doDownload(item.url, item.filename);
-                    downloadQueue.splice(index, 1);
-                    Lampa.Controller.toggle(returnTo);
-                } else if (sel.id === 'remove') {
-                    downloadQueue.splice(index, 1);
-                    Lampa.Noty.show('Removed from queue');
-                    if (downloadQueue.length > 0) {
-                        setTimeout(() => showQueueMenu(returnTo), 100);
-                    } else {
-                        Lampa.Controller.toggle(returnTo);
-                    }
-                } else {
-                    setTimeout(() => showQueueMenu(returnTo), 100);
-                }
-            },
-            onBack: () => setTimeout(() => showQueueMenu(returnTo), 100),
-            _dlHelper: true
-        });
-    }
-
-    function downloadAllFromQueue() {
-        if (downloadQueue.length === 0) {
-            Lampa.Noty.show('Queue is empty');
-            return;
-        }
-
-        // Send all to ADM with 500ms delay between each
-        let i = 0;
-        const sendNext = () => {
-            if (i >= downloadQueue.length) {
-                Lampa.Noty.show(`Sent ${downloadQueue.length} downloads to ADM`);
-                downloadQueue.length = 0;
-                return;
-            }
-            const item = downloadQueue[i];
-            doDownload(item.url, item.filename);
-            i++;
-            setTimeout(sendNext, 500);
-        };
-        sendNext();
-    }
-
     // ========== DOWNLOAD MENU ==========
     function showDownloadMenu(url, quality, returnTo, fileSize) {
-        if (!url?.startsWith('http')) {
+        if (!url?.startsWith?.('http')) {
             Lampa.Noty.show('Invalid URL');
             return;
         }
@@ -447,17 +287,9 @@
         const items = [];
 
         if (androidAvailable) {
-            items.push({ title: 'Download', subtitle: filename + '.mp4' + sizeText, id: 'download' });
-            items.push({ title: 'Add to Queue', subtitle: `Queue: ${downloadQueue.length} items`, id: 'queue' });
+            const subText = subtitles.length > 0 ? ` + ${subtitles.length} sub` : '';
+            items.push({ title: 'Download', subtitle: filename + '.mp4' + sizeText + subText, id: 'download' });
             items.push({ title: 'External Player', subtitle: 'VLC, MX...', id: 'external' });
-
-            if (subtitles.length > 0) {
-                items.push({ title: 'Download Subtitles', subtitle: `${subtitles.length} available`, id: 'subtitles' });
-            }
-        }
-
-        if (downloadQueue.length > 0) {
-            items.push({ title: 'View Queue', subtitle: `${downloadQueue.length} items`, id: 'viewqueue' });
         }
 
         items.push({ title: 'Copy URL', subtitle: url.substring(0, 40) + '...', id: 'copy' });
@@ -469,49 +301,16 @@
                 Lampa.Select.close();
                 switch (item.id) {
                     case 'download':
-                        doDownload(url, filename);
-                        Lampa.Controller.toggle(returnTo);
-                        break;
-                    case 'queue':
-                        addToQueue(url, quality, fileSize);
-                        Lampa.Controller.toggle(returnTo);
+                        doDownload(url, filename, subtitles);
                         break;
                     case 'external':
                         doExternal(url, filename);
-                        Lampa.Controller.toggle(returnTo);
-                        break;
-                    case 'subtitles':
-                        showSubtitlesMenu(subtitles, returnTo);
-                        break;
-                    case 'viewqueue':
-                        showQueueMenu(returnTo);
                         break;
                     case 'copy':
                         copyToClipboard(url);
                         Lampa.Noty.show('Copied!');
-                        Lampa.Controller.toggle(returnTo);
                         break;
                 }
-            },
-            onBack: () => Lampa.Controller.toggle(returnTo),
-            _dlHelper: true
-        });
-    }
-
-    function showSubtitlesMenu(subtitles, returnTo) {
-        const items = subtitles.map((sub, i) => ({
-            title: sub.label,
-            subtitle: sub.lang || sub.url.split('/').pop(),
-            index: i
-        }));
-
-        Lampa.Select.show({
-            title: 'Subtitles (' + subtitles.length + ')',
-            items,
-            onSelect: function(item) {
-                Lampa.Select.close();
-                const sub = subtitles[item.index];
-                doDownloadSubtitle(sub.url, sub.label);
                 Lampa.Controller.toggle(returnTo);
             },
             onBack: () => Lampa.Controller.toggle(returnTo),
@@ -622,13 +421,21 @@
         Lampa.Noty.show('Fetching sizes...');
 
         fetchAllSizes(streams, results => {
-            const items = results.map(r => ({
-                title: r.stream.quality || 'Video',
-                subtitle: r.size ? formatBytes(r.size) : (r.stream.bandwidth ? '~' + formatBytes(r.stream.bandwidth / 8 * 3600) + '/hour' : ''),
-                url: r.stream.url,
-                quality: r.stream.quality || 'Video',
-                size: r.size
-            }));
+            const items = results.map(r => {
+                let subtitle = '';
+                if (r.size) {
+                    subtitle = formatBytes(r.size);
+                } else if (r.stream.bandwidth) {
+                    subtitle = '~' + formatBytes(r.stream.bandwidth / 8 * 3600) + '/hour';
+                }
+                return {
+                    title: r.stream.quality || 'Video',
+                    subtitle,
+                    url: r.stream.url,
+                    quality: r.stream.quality || 'Video',
+                    size: r.size
+                };
+            });
 
             Lampa.Select.show({
                 title: 'Select Quality (' + streams.length + ')',
@@ -716,7 +523,7 @@
                 if (menuTitle.includes('действие') || menuTitle.includes('action')) {
                     params.items.push({
                         title: 'Download',
-                        subtitle: downloadQueue.length > 0 ? `Queue: ${downloadQueue.length}` : 'Current stream',
+                        subtitle: 'Current stream',
                         onSelect: function() {
                             Lampa.Select.close();
                             showPlayerMenu();
