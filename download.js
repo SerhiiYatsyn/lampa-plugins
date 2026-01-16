@@ -913,15 +913,9 @@
                         var itemUrl = item.url || item.file || item.link || item.stream || item.copylink;
                         if (itemUrl) {
                             foundUrl = itemUrl;
-                            debugInfo.push('-> url found!');
-
-                            // Check if this is a quality/copy link item
-                            var itemTitle = item.title || '';
-                            if (itemTitle.indexOf('Копировать') > -1 || itemTitle.indexOf('Copy') > -1 ||
-                                itemTitle.indexOf('720') > -1 || itemTitle.indexOf('480') > -1 ||
-                                itemTitle.indexOf('1080') > -1 || itemTitle.indexOf('360') > -1) {
-                                qualityUrls.push({ label: itemTitle, url: itemUrl });
-                            }
+                            var itemTitle = item.title || 'Quality ' + (qualityUrls.length + 1);
+                            debugInfo.push('-> url: ' + itemTitle);
+                            qualityUrls.push({ label: itemTitle, url: itemUrl });
                         }
 
                         var itemTitleLower = (item.title || '').toLowerCase();
