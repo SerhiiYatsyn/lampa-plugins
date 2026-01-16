@@ -154,53 +154,54 @@
     }
 
     function showPlayerMenu() {
-        // Get current playing URL first
+        console.log('[DLHelper] showPlayerMenu called');
+        Lampa.Noty.show('DL: captured=' + capturedUrls.length);
+
+        // Get current playing URL
         var currentUrl = getVideoUrl();
+        console.log('[DLHelper] currentUrl:', currentUrl);
 
-        // Build list of available URLs
-        var availableUrls = [];
-
-        // Add captured URLs if any
-        if (capturedUrls.length > 0) {
-            capturedUrls.forEach(function(u) {
-                availableUrls.push({
-                    title: u.label || u.quality || 'Captured',
-                    url: u.url
-                });
-            });
-        }
-
-        // Add current playing URL if different from captured
         if (currentUrl) {
-            var alreadyHas = availableUrls.some(function(u) { return u.url === currentUrl; });
-            if (!alreadyHas) {
-                availableUrls.unshift({ title: 'Current', url: currentUrl });
-            }
+            Lampa.Noty.show('DL: URL found');
         }
 
-        // No URLs at all
-        if (availableUrls.length === 0) {
-            Lampa.Noty.show('No URL. Start playing first!');
+        // If we have multiple captured URLs, show quality selector
+        if (capturedUrls.length > 1) {
+            console.log('[DLHelper] Showing quality selector');
+            var items = capturedUrls.map(function(u) {
+                return { title: u.label || u.quality || 'Video', url: u.url };
+            });
+
+            Lampa.Select.show({
+                title: 'Вибери якість',
+                items: items,
+                onSelect: function(sel) {
+                    Lampa.Select.close();
+                    showDownloadMenu(sel.url, sel.title, true);
+                },
+                onBack: function() { Lampa.Controller.toggle('player'); },
+                _dlHelper: true
+            });
             return;
         }
 
-        // Single URL - go directly to download menu
-        if (availableUrls.length === 1) {
-            showDownloadMenu(availableUrls[0].url, availableUrls[0].title, true);
+        // Use captured URL or current URL
+        var url = currentUrl;
+        var quality = '';
+
+        if (capturedUrls.length === 1) {
+            url = capturedUrls[0].url;
+            quality = capturedUrls[0].quality || capturedUrls[0].label || '';
+        }
+
+        if (!url) {
+            Lampa.Noty.show('No URL found');
+            console.log('[DLHelper] No URL found');
             return;
         }
 
-        // Multiple URLs - show quality selector
-        Lampa.Select.show({
-            title: 'Вибери якість',
-            items: availableUrls,
-            onSelect: function(sel) {
-                Lampa.Select.close();
-                showDownloadMenu(sel.url, sel.title, true);
-            },
-            onBack: function() { Lampa.Controller.toggle('player'); },
-            _dlHelper: true
-        });
+        console.log('[DLHelper] Showing download menu for:', url.substring(0, 50));
+        showDownloadMenu(url, quality, true);
     }
 
     function addPlayerButton() {
