@@ -502,7 +502,32 @@ p{color:#888;margin-top:20px;}</style>
         }
         intentUrl += 'end';
 
-        // Try to open via anchor click (works in some WebViews)
+        // Method 1: Try Lampa.Android.openBrowser for intent URL (preferred on Android)
+        if (Lampa.Android?.openBrowser) {
+            try {
+                Lampa.Android.openBrowser(intentUrl);
+                Lampa.Noty.show('Opening 1DM...');
+                return true;
+            } catch (e) {
+                console.log('Intent via openBrowser failed:', e);
+            }
+        }
+
+        // Method 2: Try idmdownload:// URL scheme (fallback, no filename)
+        const schemeUrl = 'idmdownload:' + url;
+
+        if (Lampa.Android?.openBrowser) {
+            try {
+                Lampa.Android.openBrowser(schemeUrl);
+                copyToClipboard(filename);
+                Lampa.Noty.show('Filename copied! Paste in 1DM');
+                return true;
+            } catch (e) {
+                console.log('1DM scheme failed:', e);
+            }
+        }
+
+        // Method 3: Try anchor click (works in some WebViews)
         try {
             const a = document.createElement('a');
             a.href = intentUrl;
@@ -514,21 +539,6 @@ p{color:#888;margin-top:20px;}</style>
             return true;
         } catch (e) {
             console.log('Intent anchor click failed:', e);
-        }
-
-        // Method 2: Try idmdownload:// URL scheme (fallback, no filename)
-        const schemeUrl = 'idmdownload:' + url;
-
-        if (Lampa.Android?.openBrowser) {
-            try {
-                Lampa.Android.openBrowser(schemeUrl);
-                // Copy filename for manual paste in 1DM
-                copyToClipboard(filename);
-                Lampa.Noty.show('Filename copied! Paste in 1DM');
-                return true;
-            } catch (e) {
-                console.log('1DM scheme failed:', e);
-            }
         }
 
         // Method 2: Try Android global share if available
