@@ -500,29 +500,14 @@ p{color:#888;margin-top:20px;}</style>
         }
         intentUrl += 'end';
 
-        Lampa.Noty.show('1DM: iframe method');
-
-        // Method 1: Try iframe with intent URL (standard way for Android WebView)
-        try {
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = intentUrl;
-            document.body.appendChild(iframe);
-            setTimeout(() => iframe.remove(), 2000);
-            return true;
-        } catch (e) {
-            Lampa.Noty.show('1DM iframe error: ' + e.message);
+        // Debug: show available Android methods
+        if (typeof Android !== 'undefined') {
+            const methods = Object.keys(Android).join(', ');
+            Lampa.Noty.show('Android: ' + methods);
+        } else {
+            Lampa.Noty.show('No Android object');
         }
-
-        Lampa.Noty.show('1DM: location method');
-
-        // Method 2: Try window.location (fallback)
-        try {
-            window.location.href = intentUrl;
-            return true;
-        } catch (e) {
-            Lampa.Noty.show('1DM location error: ' + e.message);
-        }
+        return false;
 
         // Method 2: Try Android global share if available
         if (typeof Android !== 'undefined' && Android.share) {
