@@ -481,21 +481,47 @@ p{color:#888;margin-top:20px;}</style>
             return true;
         }
 
-        // Use idmdownload: scheme - supported by 1DM (no double slash!)
-        const schemeUrl = 'idmdownload:' + url;
+        // Build intent URL for 1DM (works in Android WebView)
+        // Format: intent:{url}#Intent;package=...;scheme=idmdownload;S.extra_filename=...;end
+        let intentUrl = 'intent:' + url + '#Intent;';
+        intentUrl += 'package=idm.internet.download.manager.plus;';
+        intentUrl += 'scheme=idmdownload;';
+        intentUrl += 'S.extra_filename=' + encodeURIComponent(filename) + ';';
+        if (headers) {
+            if (headers['Referer']) {
+                intentUrl += 'S.extra_referer=' + encodeURIComponent(headers['Referer']) + ';';
+            }
+            if (headers['User-Agent']) {
+                intentUrl += 'S.extra_useragent=' + encodeURIComponent(headers['User-Agent']) + ';';
+            }
+            if (headers['Cookie']) {
+                intentUrl += 'S.extra_cookies=' + encodeURIComponent(headers['Cookie']) + ';';
+            }
+        }
+        intentUrl += 'end';
 
-        // Method 1: Try iframe (works in Android WebView)
+        Lampa.Noty.show('1DM: iframe method');
+
+        // Method 1: Try iframe with intent URL (standard way for Android WebView)
         try {
             const iframe = document.createElement('iframe');
             iframe.style.display = 'none';
-            iframe.src = schemeUrl;
+            iframe.src = intentUrl;
             document.body.appendChild(iframe);
             setTimeout(() => iframe.remove(), 2000);
-            copyToClipboard(filename);
-            Lampa.Noty.show('Opening 1DM... (filename copied)');
             return true;
         } catch (e) {
-            console.log('1DM iframe failed:', e);
+            Lampa.Noty.show('1DM iframe error: ' + e.message);
+        }
+
+        Lampa.Noty.show('1DM: location method');
+
+        // Method 2: Try window.location (fallback)
+        try {
+            window.location.href = intentUrl;
+            return true;
+        } catch (e) {
+            Lampa.Noty.show('1DM location error: ' + e.message);
         }
 
         // Method 2: Try Android global share if available
