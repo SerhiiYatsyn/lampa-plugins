@@ -500,12 +500,12 @@ p{color:#888;margin-top:20px;}</style>
         }
         intentUrl += 'end';
 
-        // Debug: show available Android methods
-        if (typeof Android !== 'undefined') {
-            const methods = Object.keys(Android).join(', ');
-            Lampa.Noty.show('Android: ' + methods);
+        // Debug: show available Lampa.Android methods
+        if (Lampa.Android) {
+            const methods = Object.keys(Lampa.Android).join(', ');
+            Lampa.Noty.show('Lampa.Android: ' + methods);
         } else {
-            Lampa.Noty.show('No Android object');
+            Lampa.Noty.show('No Lampa.Android');
         }
         return false;
 
